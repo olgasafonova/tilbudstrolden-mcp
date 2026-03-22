@@ -116,6 +116,24 @@ export async function getStoreOffers(
   return raw.map(parseOffer);
 }
 
+/**
+ * Search deals for multiple queries in parallel, deduplicating results by offer ID.
+ * Returns a map of query → matching offers.
+ */
+export async function searchDealsBatch(
+  queries: string[],
+  limit = 5,
+): Promise<Map<string, Offer[]>> {
+  const unique = [...new Set(queries)];
+  const results = await Promise.all(
+    unique.map(async (q) => {
+      const offers = await searchDeals(q, limit);
+      return [q, offers] as const;
+    }),
+  );
+  return new Map(results);
+}
+
 export async function listStores(countryId = "DK"): Promise<Dealer[]> {
   const params = new URLSearchParams({
     country_id: countryId,
