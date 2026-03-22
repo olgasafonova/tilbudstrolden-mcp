@@ -1,0 +1,4 @@
+node_modules/
+dist/
+*.js.map
+.smart-shopper-recipes.json

@@ -1,0 +1,20 @@
+{
+  "name": "smart-shopper-mcp",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "MCP server for Danish grocery deal hunting — search offers from Netto, Meny, Lidl and more via etilbudsavis.dk",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "dev": "tsx watch src/server.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.3.0"
+  }
+}
