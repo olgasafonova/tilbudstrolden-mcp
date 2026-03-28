@@ -5,3 +5,7 @@ dist/
 .smart-shopper.json
 .tilbudstrolden.json
 CLAUDE.md
+
+# Dolt database files (added by bd init)
+.dolt/
+*.db
