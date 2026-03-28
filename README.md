@@ -18,7 +18,7 @@ An MCP server that searches Danish grocery chains for current deals, scores your
 
 **"Score my recipes against this week's deals."** Save your go-to recipes with Danish search terms per ingredient. The scoring engine checks current offers, ranks recipes by deal coverage, and tells you which meals are cheapest to cook this week.
 
-**"Plan next week's dinners."** Generate an optimized weekly meal plan that minimizes total basket cost while keeping protein variety (no chicken five nights in a row). Then export a shopping list grouped by store.
+**"Plan next week's dinners."** Generate an optimized weekly meal plan that minimizes total basket cost while enforcing variety: no protein more than twice, no cuisine more than twice, and a cap on slow-cook nights. Then export a shopping list grouped by store.
 
 **"We already have onions and rice."** Track your pantry. Items you have at home get excluded from shopping lists and scoring.
 
@@ -43,7 +43,7 @@ Netto, Meny, Lidl, REMA 1000, Foetex, Bilka, Spar, Kvickly, 365discount, and any
 - **add_recipe / get_recipes / remove_recipe** - Save recipes with ingredients, Danish search terms, complexity, cuisine type, and protein type
 
 ### Planning
-- **score_recipes** - Score all saved recipes against current deals; optionally generate an optimized weekly meal plan
+- **score_recipes** - Score all saved recipes against current deals; optionally generate an optimized weekly meal plan with variety constraints (protein, cuisine, complexity)
 - **generate_shopping_list** - Build a deal-optimized shopping list from selected recipes, grouped by store
 
 ### Tracking

@@ -784,8 +784,22 @@ server.tool(
       .describe(
         "Max times the same protein type can appear in the plan (default 2)",
       ),
+    maxPerCuisine: z
+      .number()
+      .optional()
+      .default(2)
+      .describe(
+        "Max times the same cuisine type can appear in the plan (default 2)",
+      ),
+    maxSlowDays: z
+      .number()
+      .optional()
+      .default(2)
+      .describe(
+        "Max number of 'slow' (60min+) recipes in the plan (default 2)",
+      ),
   },
-  async ({ optimize, days, maxPerProtein }) => {
+  async ({ optimize, days, maxPerProtein, maxPerCuisine, maxSlowDays }) => {
     const household = await store.getHousehold();
     const pantry = await store.getPantry();
     const pantrySet = new Set(pantry.map((p) => p.toLowerCase()));
@@ -802,7 +816,13 @@ server.tool(
 
       // Generate valid combinations respecting protein variety
       // For small recipe counts, enumerate; for larger, use greedy
-      const bestPlan = findOptimalWeek(scored, days, maxPerProtein);
+      const bestPlan = findOptimalWeek(
+        scored,
+        days,
+        maxPerProtein,
+        maxPerCuisine,
+        maxSlowDays,
+      );
       if (bestPlan) {
         const basket = calculateBasketCost(bestPlan.recipes);
         parts.push(`Total basket: ~${basket.totalCost} DKK for ${days} days`);
@@ -813,12 +833,12 @@ server.tool(
         for (let i = 0; i < bestPlan.recipes.length; i++) {
           const r = bestPlan.recipes[i];
           parts.push(
-            `Day ${i + 1}: ${r.name} (~${r.estimatedCost} DKK) [${r.proteinType}]`,
+            `Day ${i + 1}: ${r.name} (~${r.estimatedCost} DKK) [${r.proteinType}, ${r.cuisineType}, ${r.complexity}]`,
           );
         }
       } else {
         parts.push(
-          "Could not find a valid combination with the variety constraints. Try relaxing maxPerProtein.",
+          "Could not find a valid combination with the variety constraints. Try relaxing maxPerProtein, maxPerCuisine, or maxSlowDays.",
         );
       }
     }
@@ -831,19 +851,27 @@ server.tool(
 
 /**
  * Greedy optimizer: pick the cheapest set of `days` recipes
- * while respecting protein variety constraints.
+ * while respecting variety constraints on protein, cuisine, and complexity.
  * Falls back to combinatorial search for small recipe sets.
  */
 function findOptimalWeek(
   scored: ScoredRecipe[],
   days: number,
   maxPerProtein: number,
+  maxPerCuisine: number,
+  maxSlowDays: number,
 ): { recipes: ScoredRecipe[]; basketCost: number } | null {
   const n = scored.length;
 
   // For small sets, try all valid combinations
   if (n <= 12) {
-    return findOptimalBrute(scored, days, maxPerProtein);
+    return findOptimalBrute(
+      scored,
+      days,
+      maxPerProtein,
+      maxPerCuisine,
+      maxSlowDays,
+    );
   }
 
   // Greedy: sort by cost, pick while respecting constraints
@@ -852,13 +880,20 @@ function findOptimalWeek(
   );
   const picked: ScoredRecipe[] = [];
   const proteinCount: Record<string, number> = {};
+  const cuisineCount: Record<string, number> = {};
+  let slowCount = 0;
 
   for (const recipe of byBasketValue) {
     if (picked.length >= days) break;
-    const pType = recipe.proteinType;
-    if ((proteinCount[pType] ?? 0) >= maxPerProtein) continue;
+    if ((proteinCount[recipe.proteinType] ?? 0) >= maxPerProtein) continue;
+    if ((cuisineCount[recipe.cuisineType] ?? 0) >= maxPerCuisine) continue;
+    if (recipe.complexity === "slow" && slowCount >= maxSlowDays) continue;
     picked.push(recipe);
-    proteinCount[pType] = (proteinCount[pType] ?? 0) + 1;
+    proteinCount[recipe.proteinType] =
+      (proteinCount[recipe.proteinType] ?? 0) + 1;
+    cuisineCount[recipe.cuisineType] =
+      (cuisineCount[recipe.cuisineType] ?? 0) + 1;
+    if (recipe.complexity === "slow") slowCount++;
   }
 
   if (picked.length < days) return null;
@@ -870,15 +905,23 @@ function findOptimalBrute(
   scored: ScoredRecipe[],
   days: number,
   maxPerProtein: number,
+  maxPerCuisine: number,
+  maxSlowDays: number,
 ): { recipes: ScoredRecipe[]; basketCost: number } | null {
   let bestCombo: ScoredRecipe[] | null = null;
   let bestCost = Infinity;
 
   function isValid(combo: ScoredRecipe[]): boolean {
     const proteinCount: Record<string, number> = {};
+    const cuisineCount: Record<string, number> = {};
+    let slowCount = 0;
     for (const r of combo) {
       proteinCount[r.proteinType] = (proteinCount[r.proteinType] ?? 0) + 1;
       if (proteinCount[r.proteinType] > maxPerProtein) return false;
+      cuisineCount[r.cuisineType] = (cuisineCount[r.cuisineType] ?? 0) + 1;
+      if (cuisineCount[r.cuisineType] > maxPerCuisine) return false;
+      if (r.complexity === "slow") slowCount++;
+      if (slowCount > maxSlowDays) return false;
     }
     return true;
   }
