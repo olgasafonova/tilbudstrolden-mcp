@@ -349,7 +349,8 @@ describe("findOptimalWeek", () => {
       maxPerProtein: 2,
     });
     expect(result).not.toBeNull();
-    const chickenCount = result?.recipes.filter((r) => r.proteinType === "chicken").length ?? 0;
+    const chickenCount =
+      result?.recipes.filter((r) => r.proteinType === "chicken").length ?? 0;
     expect(chickenCount).toBeLessThanOrEqual(2);
   });
 
@@ -385,7 +386,8 @@ describe("findOptimalWeek", () => {
       maxPerCuisine: 2,
     });
     expect(result).not.toBeNull();
-    const italianCount = result?.recipes.filter((r) => r.cuisineType === "italian").length ?? 0;
+    const italianCount =
+      result?.recipes.filter((r) => r.cuisineType === "italian").length ?? 0;
     expect(italianCount).toBeLessThanOrEqual(2);
   });
 
@@ -432,7 +434,8 @@ describe("findOptimalWeek", () => {
       maxSlowDays: 1,
     });
     expect(result).not.toBeNull();
-    const slowCount = result?.recipes.filter((r) => r.complexity === "slow").length ?? 0;
+    const slowCount =
+      result?.recipes.filter((r) => r.complexity === "slow").length ?? 0;
     expect(slowCount).toBeLessThanOrEqual(1);
   });
 
@@ -464,5 +467,166 @@ describe("findOptimalWeek", () => {
       maxSlowDays: 1,
     });
     expect(result).toBeNull();
+  });
+
+  it("excludes proteins globally", () => {
+    const recipes = [
+      makeRecipe({
+        name: "A",
+        proteinType: "pork",
+        cuisineType: "a",
+        estimatedCost: 10,
+      }),
+      makeRecipe({
+        name: "B",
+        proteinType: "chicken",
+        cuisineType: "b",
+        estimatedCost: 20,
+      }),
+      makeRecipe({
+        name: "C",
+        proteinType: "beef",
+        cuisineType: "c",
+        estimatedCost: 30,
+      }),
+      makeRecipe({
+        name: "D",
+        proteinType: "fish",
+        cuisineType: "d",
+        estimatedCost: 40,
+      }),
+    ];
+    const result = findOptimalWeek(recipes, 3, {
+      ...constraints,
+      excludeProteins: ["pork"],
+    });
+    expect(result).not.toBeNull();
+    expect(result?.recipes.every((r) => r.proteinType !== "pork")).toBe(true);
+  });
+
+  it("allows excluded protein on specific days", () => {
+    const recipes = [
+      makeRecipe({
+        name: "A",
+        proteinType: "chicken",
+        cuisineType: "a",
+        estimatedCost: 50,
+      }),
+      makeRecipe({
+        name: "B",
+        proteinType: "pork",
+        cuisineType: "b",
+        estimatedCost: 10,
+      }),
+      makeRecipe({
+        name: "C",
+        proteinType: "beef",
+        cuisineType: "c",
+        estimatedCost: 30,
+      }),
+      makeRecipe({
+        name: "D",
+        proteinType: "fish",
+        cuisineType: "d",
+        estimatedCost: 40,
+      }),
+    ];
+    const result = findOptimalWeek(recipes, 3, {
+      ...constraints,
+      excludeProteins: ["pork"],
+      allowProteinOnDays: { pork: [1] },
+    });
+    expect(result).not.toBeNull();
+    // Pork should be on day 1 (cheapest and allowed there)
+    expect(result?.recipes[0].proteinType).toBe("pork");
+  });
+
+  it("restricts slow recipes to specific days", () => {
+    const recipes = [
+      makeRecipe({
+        name: "A",
+        proteinType: "a",
+        cuisineType: "a",
+        complexity: "slow",
+        estimatedCost: 10,
+      }),
+      makeRecipe({
+        name: "B",
+        proteinType: "b",
+        cuisineType: "b",
+        complexity: "quick",
+        estimatedCost: 20,
+      }),
+      makeRecipe({
+        name: "C",
+        proteinType: "c",
+        cuisineType: "c",
+        complexity: "quick",
+        estimatedCost: 30,
+      }),
+    ];
+    // Slow only allowed on day 3
+    const result = findOptimalWeek(recipes, 3, {
+      ...constraints,
+      slowOnlyOnDays: [3],
+    });
+    expect(result).not.toBeNull();
+    // Slow recipe "A" should be on day 3 (position index 2)
+    const slowIdx =
+      result?.recipes.findIndex((r) => r.complexity === "slow") ?? -1;
+    expect(slowIdx).toBe(2);
+  });
+
+  it("combines exclude + slow constraints", () => {
+    const recipes = [
+      makeRecipe({
+        name: "A",
+        proteinType: "pork",
+        cuisineType: "a",
+        complexity: "slow",
+        estimatedCost: 10,
+      }),
+      makeRecipe({
+        name: "B",
+        proteinType: "chicken",
+        cuisineType: "b",
+        complexity: "quick",
+        estimatedCost: 20,
+      }),
+      makeRecipe({
+        name: "C",
+        proteinType: "beef",
+        cuisineType: "c",
+        complexity: "quick",
+        estimatedCost: 30,
+      }),
+      makeRecipe({
+        name: "D",
+        proteinType: "fish",
+        cuisineType: "d",
+        complexity: "slow",
+        estimatedCost: 40,
+      }),
+      makeRecipe({
+        name: "E",
+        proteinType: "egg",
+        cuisineType: "e",
+        complexity: "quick",
+        estimatedCost: 50,
+      }),
+    ];
+    // No pork, slow only on day 3
+    const result = findOptimalWeek(recipes, 3, {
+      ...constraints,
+      excludeProteins: ["pork"],
+      slowOnlyOnDays: [3],
+    });
+    expect(result).not.toBeNull();
+    expect(result?.recipes.every((r) => r.proteinType !== "pork")).toBe(true);
+    for (let i = 0; i < (result?.recipes.length ?? 0); i++) {
+      if (result?.recipes[i].complexity === "slow") {
+        expect(i + 1).toBe(3); // slow only on day 3
+      }
+    }
   });
 });
