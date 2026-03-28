@@ -1,6 +1,7 @@
-// Starter recipe pack: 26 dinner recipes for Danish households.
+// Starter recipe pack: 27 dinner recipes for Danish households.
 // Danish recipe ingredient lists adapted from valdemarsro.dk.
-// Asian recipes based on common versions of popular dishes.
+// Uncle Roger recipes sourced from his YouTube cooking videos (Nigel Ng).
+// Asian staples (nasi goreng, chow mein) based on common versions.
 
 import type { Recipe } from "./store.js";
 
@@ -1635,64 +1636,71 @@ export const defaultRecipes: Recipe[] = [
     ],
   },
   {
-    name: "Egg Fried Rice",
-    servings: 4,
+    // Source: https://www.youtube.com/watch?v=SGBP3sG3a9Y
+    name: "Uncle Roger's Egg Fried Rice",
+    servings: 2,
     complexity: "quick",
     cuisineType: "asian",
-    proteinType: "vegetarian",
+    proteinType: "egg",
     ingredients: [
       {
-        name: "Jasminris",
-        quantity: "4 dl",
+        name: "Jasminris (rester fra dagen før)",
+        quantity: "3 dl",
         searchTerms: ["jasminris", "ris"],
         category: "pantry",
       },
       {
         name: "Æg",
-        quantity: "4 stk",
+        quantity: "2 stk",
         searchTerms: ["æg", "frilandsæg"],
         category: "dairy",
       },
       {
-        name: "Forårsløg",
-        quantity: "4 stk",
-        searchTerms: ["forårsløg", "grønne løg"],
-        category: "produce",
-      },
-      {
         name: "Hvidløg",
-        quantity: "3 fed",
+        quantity: "5 fed",
         searchTerms: ["hvidløg"],
         category: "produce",
       },
       {
+        name: "Skalotteløg",
+        quantity: "1 stk",
+        searchTerms: ["skalotteløg", "skalotte"],
+        category: "produce",
+      },
+      {
+        name: "Forårsløg",
+        quantity: "2 stk",
+        searchTerms: ["forårsløg", "grønne løg"],
+        category: "produce",
+      },
+      {
+        name: "Chili",
+        quantity: "1 stk",
+        searchTerms: ["chili", "frisk chili"],
+        category: "produce",
+      },
+      {
         name: "Sojasauce",
-        quantity: "2 spsk",
+        quantity: "efter smag",
         searchTerms: ["sojasauce", "soja"],
         category: "pantry",
       },
       {
         name: "Sesamolie",
-        quantity: "1 spsk",
+        quantity: "efter smag",
         searchTerms: ["sesamolie"],
+        category: "pantry",
+      },
+      {
+        name: "MSG",
+        quantity: "efter smag",
+        searchTerms: ["MSG", "glutamat"],
         category: "pantry",
       },
       {
         name: "Neutral olie",
         quantity: "3 spsk",
         searchTerms: ["rapsolie", "solsikkeolie"],
-        category: "pantry",
-      },
-      {
-        name: "MSG",
-        quantity: "1 tsk",
-        searchTerms: ["MSG", "glutamat"],
-        category: "pantry",
-      },
-      {
-        name: "Hvid peber",
-        quantity: "0.5 tsk",
-        searchTerms: ["hvid peber", "peber"],
         category: "pantry",
       },
     ],
@@ -1861,6 +1869,88 @@ export const defaultRecipes: Recipe[] = [
         name: "Neutral olie",
         quantity: "3 spsk",
         searchTerms: ["rapsolie", "solsikkeolie"],
+        category: "pantry",
+      },
+    ],
+  },
+  {
+    // Source: https://www.youtube.com/watch?v=KKpWGnkO3e4
+    name: "Uncle Roger's Adobo",
+    servings: 4,
+    complexity: "slow",
+    cuisineType: "asian",
+    proteinType: "pork",
+    ingredients: [
+      {
+        name: "Brystflæsk",
+        quantity: "800 g",
+        searchTerms: ["brystflæsk", "svinebryst", "pork belly"],
+        category: "meat",
+      },
+      {
+        name: "Hvidløg",
+        quantity: "rigeligt",
+        searchTerms: ["hvidløg"],
+        category: "produce",
+      },
+      {
+        name: "Laurbærblade",
+        quantity: "3-4 stk",
+        searchTerms: ["laurbærblade", "laurbær"],
+        category: "pantry",
+      },
+      {
+        name: "Sort peber",
+        quantity: "efter smag",
+        searchTerms: ["sort peber", "peber"],
+        category: "pantry",
+      },
+      {
+        name: "Lys sojasauce",
+        quantity: "efter smag",
+        searchTerms: ["sojasauce", "lys sojasauce"],
+        category: "pantry",
+      },
+      {
+        name: "Mørk sojasauce",
+        quantity: "efter smag",
+        searchTerms: ["mørk sojasauce", "sojasauce"],
+        category: "pantry",
+      },
+      {
+        name: "Eddike",
+        quantity: "rigeligt",
+        searchTerms: ["eddike", "hvidvinseddike"],
+        category: "pantry",
+      },
+      {
+        name: "Salt",
+        quantity: "efter smag",
+        searchTerms: ["salt"],
+        category: "pantry",
+      },
+      {
+        name: "MSG",
+        quantity: "efter smag",
+        searchTerms: ["MSG", "glutamat"],
+        category: "pantry",
+      },
+      {
+        name: "Rapsolie",
+        quantity: "til stegning",
+        searchTerms: ["rapsolie", "olie"],
+        category: "pantry",
+      },
+      {
+        name: "Forårsløg",
+        quantity: "1 bundt",
+        searchTerms: ["forårsløg", "grønne løg"],
+        category: "produce",
+      },
+      {
+        name: "Jasminris",
+        quantity: "3 dl",
+        searchTerms: ["jasminris", "ris"],
         category: "pantry",
       },
     ],
