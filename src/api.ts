@@ -147,13 +147,35 @@ async function withConcurrencyLimit<T>(tasks: (() => Promise<T>)[], limit: numbe
   return results;
 }
 
+// --- Danish store filter ---
+
+let danishDealerCache: Set<string> | null = null;
+
+/** Fetch and cache all Danish dealer IDs for filtering. */
+export async function getDanishDealerIds(): Promise<Set<string>> {
+  if (danishDealerCache) return danishDealerCache;
+  const dealers = await listStores("DK");
+  danishDealerCache = new Set(dealers.map((d) => d.id));
+  return danishDealerCache;
+}
+
+/** Clear the dealer cache (for testing). */
+export function clearDealerCache(): void {
+  danishDealerCache = null;
+}
+
 export async function searchDeals(query: string, limit = 20): Promise<Offer[]> {
+  // Request extra to compensate for filtering non-Danish results
   const params = new URLSearchParams({
     query,
-    limit: String(limit),
+    limit: String(limit * 3),
   });
   const raw = await fetchJson<RawOffer[]>(`${BASE_URL}/offers/search?${params}`);
-  return raw.map(parseOffer);
+  const danishIds = await getDanishDealerIds();
+  return raw
+    .map(parseOffer)
+    .filter((o) => danishIds.has(o.storeId))
+    .slice(0, limit);
 }
 
 export async function getStoreOffers(dealerId: string, limit = 50): Promise<Offer[]> {

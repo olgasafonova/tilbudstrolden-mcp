@@ -2,8 +2,11 @@ import { describe, expect, it } from "vitest";
 import type { Offer } from "./api.js";
 import {
   calculateBasketCost,
+  computeIngredientCost,
   findBestDeal,
   findOptimalWeek,
+  isModifierPosition,
+  parseQuantity,
   SCORE,
   type ScoredRecipe,
   scoreDealMatch,
@@ -55,6 +58,123 @@ function makeRecipe(overrides: Partial<ScoredRecipe> = {}): ScoredRecipe {
     ...overrides,
   };
 }
+
+// --- parseQuantity ---
+
+describe("parseQuantity", () => {
+  it("parses grams", () => {
+    expect(parseQuantity("500 g")).toEqual({ amount: 500, unit: "g" });
+  });
+
+  it("parses grams without space", () => {
+    expect(parseQuantity("500g")).toEqual({ amount: 500, unit: "g" });
+  });
+
+  it("parses kilograms and converts to grams", () => {
+    expect(parseQuantity("1 kg")).toEqual({ amount: 1000, unit: "g" });
+  });
+
+  it("parses deciliters and converts to ml", () => {
+    expect(parseQuantity("1 dl")).toEqual({ amount: 100, unit: "ml" });
+  });
+
+  it("parses liters and converts to ml", () => {
+    expect(parseQuantity("0,5 l")).toEqual({ amount: 500, unit: "ml" });
+  });
+
+  it("parses stk", () => {
+    expect(parseQuantity("2 stk")).toEqual({ amount: 2, unit: "stk" });
+  });
+
+  it("parses cl", () => {
+    expect(parseQuantity("33 cl")).toEqual({ amount: 330, unit: "ml" });
+  });
+
+  it("returns null for unparseable quantities", () => {
+    expect(parseQuantity("efter smag")).toBeNull();
+  });
+
+  it("returns null for unknown units", () => {
+    expect(parseQuantity("3 fed")).toBeNull();
+    expect(parseQuantity("2 spsk")).toBeNull();
+    expect(parseQuantity("2 stængler")).toBeNull();
+  });
+
+  it("returns null for zero amount", () => {
+    expect(parseQuantity("0 g")).toBeNull();
+  });
+
+  it("handles decimal with period", () => {
+    expect(parseQuantity("1.5 kg")).toEqual({ amount: 1500, unit: "g" });
+  });
+});
+
+// --- computeIngredientCost ---
+
+describe("computeIngredientCost", () => {
+  it("computes cost based on unit price and recipe quantity", () => {
+    // Offer: 400g for 45 DKK = 112.5 kr/kg. Recipe needs 500g for 4 servings, household of 4.
+    const offer = makeOffer({ price: 45, quantity: 400, unit: "g" });
+    const cost = computeIngredientCost(offer, "500 g", 4, 4);
+    // 45/400 * 500 * (4/4) = 56.25
+    expect(cost).toBeCloseTo(56.25, 2);
+  });
+
+  it("scales by household size vs recipe servings", () => {
+    // Same offer, but household of 2 eating a recipe for 4
+    const offer = makeOffer({ price: 45, quantity: 400, unit: "g" });
+    const cost = computeIngredientCost(offer, "500 g", 4, 2);
+    // 45/400 * 500 * (2/4) = 28.125
+    expect(cost).toBeCloseTo(28.13, 2);
+  });
+
+  it("handles kg recipe vs g offer", () => {
+    // Offer: 400g for 45 DKK. Recipe: 1 kg. Household matches servings.
+    const offer = makeOffer({ price: 45, quantity: 400, unit: "g" });
+    const cost = computeIngredientCost(offer, "1 kg", 4, 4);
+    // 45/400 * 1000 * 1 = 112.5
+    expect(cost).toBeCloseTo(112.5, 2);
+  });
+
+  it("handles dl recipe vs ml offer", () => {
+    // Offer: 1000ml for 20 DKK. Recipe: 2 dl (200ml).
+    const offer = makeOffer({ price: 20, quantity: 1000, unit: "ml" });
+    const cost = computeIngredientCost(offer, "2 dl", 4, 4);
+    // 20/1000 * 200 * 1 = 4
+    expect(cost).toBeCloseTo(4, 2);
+  });
+
+  it("falls back to sticker price * scale for unknown units", () => {
+    const offer = makeOffer({ price: 25 });
+    const cost = computeIngredientCost(offer, "3 fed", 4, 4);
+    // Can't parse "fed", falls back to 25 * (4/4) = 25
+    expect(cost).toBe(25);
+  });
+
+  it("falls back to sticker price * scale when offer has no quantity", () => {
+    const offer = makeOffer({ price: 30, quantity: null, unit: null });
+    const cost = computeIngredientCost(offer, "500 g", 4, 2);
+    // 30 * (2/4) = 15
+    expect(cost).toBe(15);
+  });
+
+  it("falls back when units are incompatible (g vs ml)", () => {
+    const offer = makeOffer({ price: 20, quantity: 500, unit: "ml" });
+    const cost = computeIngredientCost(offer, "500 g", 4, 4);
+    // Incompatible units, falls back to 20 * (4/4) = 20
+    expect(cost).toBe(20);
+  });
+
+  it("returns 0 for null price", () => {
+    const offer = makeOffer({ price: null });
+    expect(computeIngredientCost(offer, "500 g", 4, 4)).toBe(0);
+  });
+
+  it("returns 0 for zero price", () => {
+    const offer = makeOffer({ price: 0 });
+    expect(computeIngredientCost(offer, "500 g", 4, 4)).toBe(0);
+  });
+});
 
 // --- scoreDealMatch ---
 
@@ -129,15 +249,68 @@ describe("scoreDealMatch", () => {
     // Should get base + partial match, no processing penalty
     expect(score).toBe(SCORE.BASE + SCORE.PARTIAL_MATCH_BONUS);
   });
+
+  it("penalizes modifier position (term after preposition)", () => {
+    const offer = makeOffer({ heading: "Tunfilet i olivenolie" });
+    const ing = makeIngredient({ category: "pantry" });
+    const score = scoreDealMatch(offer, ing, "olivenolie", new Set());
+    // Should get modifier penalty, well below confident threshold
+    expect(score).toBeLessThan(SCORE.CONFIDENT_THRESHOLD);
+  });
+
+  it("does not penalize when term is the primary product", () => {
+    const offer = makeOffer({ heading: "Olivenolie extra virgin" });
+    const ing = makeIngredient({ category: "pantry" });
+    const score = scoreDealMatch(offer, ing, "olivenolie", new Set());
+    expect(score).toBe(SCORE.BASE + SCORE.EXACT_MATCH_BONUS);
+  });
+
+  it("penalizes when term not found at all in heading", () => {
+    const offer = makeOffer({ heading: "Vaseline lotion" });
+    const ing = makeIngredient({ category: "pantry" });
+    const score = scoreDealMatch(offer, ing, "MSG", new Set());
+    expect(score).toBe(0);
+  });
+});
+
+// --- isModifierPosition ---
+
+describe("isModifierPosition", () => {
+  it("detects term after 'i'", () => {
+    expect(isModifierPosition("tunfilet i olivenolie", "olivenolie")).toBe(true);
+  });
+
+  it("detects term after 'med'", () => {
+    expect(isModifierPosition("pizza med hvidløg", "hvidløg")).toBe(true);
+  });
+
+  it("detects term after 'og'", () => {
+    expect(isModifierPosition("ost og skinke", "skinke")).toBe(true);
+  });
+
+  it("returns false when term starts the heading", () => {
+    expect(isModifierPosition("olivenolie extra virgin", "olivenolie")).toBe(false);
+  });
+
+  it("returns false when term is not after a preposition", () => {
+    expect(isModifierPosition("hakket oksekød 7-10%", "oksekød")).toBe(false);
+  });
+
+  it("returns false when term not found", () => {
+    expect(isModifierPosition("hakket oksekød", "laks")).toBe(false);
+  });
 });
 
 // --- findBestDeal ---
 
 describe("findBestDeal", () => {
-  it("returns null when no deals match", () => {
+  it("returns confidence none when no deals match", () => {
     const ing = makeIngredient();
     const dealMap = new Map<string, Offer[]>();
-    expect(findBestDeal(ing, dealMap, new Set())).toBeNull();
+    const result = findBestDeal(ing, dealMap, new Set());
+    expect(result.best).toBeNull();
+    expect(result.confidence).toBe("none");
+    expect(result.candidates).toHaveLength(0);
   });
 
   it("returns the best-scoring offer", () => {
@@ -149,16 +322,24 @@ describe("findBestDeal", () => {
     const ing = makeIngredient({ searchTerms: ["oksekød"] });
     const dealMap = new Map([["oksekød", [rawOffer, processedOffer]]]);
     const result = findBestDeal(ing, dealMap, new Set());
-    expect(result).toBe(rawOffer);
+    expect(result.best).toBe(rawOffer);
   });
 
   it("picks cheaper offer when scores tie", () => {
-    const cheap = makeOffer({ heading: "Hakket oksekød", price: 30 });
-    const expensive = makeOffer({ heading: "Hakket oksekød", price: 60 });
+    const cheap = makeOffer({
+      id: "cheap",
+      heading: "Hakket oksekød",
+      price: 30,
+    });
+    const expensive = makeOffer({
+      id: "expensive",
+      heading: "Hakket oksekød",
+      price: 60,
+    });
     const ing = makeIngredient({ searchTerms: ["oksekød"], category: "dairy" });
     const dealMap = new Map([["oksekød", [expensive, cheap]]]);
     const result = findBestDeal(ing, dealMap, new Set());
-    expect(result).toBe(cheap);
+    expect(result.best).toBe(cheap);
   });
 
   it("searches across multiple search terms", () => {
@@ -173,7 +354,52 @@ describe("findBestDeal", () => {
       ["lam", []],
     ]);
     const result = findBestDeal(ing, dealMap, new Set());
-    expect(result).toBe(offer);
+    expect(result.best).toBe(offer);
+  });
+
+  it("returns high confidence for strong matches", () => {
+    const offer = makeOffer({
+      heading: "Hakket oksekød 7-10%",
+      price: 45,
+      store: "Netto",
+    });
+    const ing = makeIngredient({ searchTerms: ["hakket oksekød"] });
+    const preferred = new Set(["Netto"]);
+    const dealMap = new Map([["hakket oksekød", [offer]]]);
+    const result = findBestDeal(ing, dealMap, preferred);
+    expect(result.confidence).toBe("high");
+  });
+
+  it("returns low confidence for modifier matches", () => {
+    const offer = makeOffer({ heading: "Tunfilet i olivenolie", price: 20 });
+    const ing = makeIngredient({
+      name: "olivenolie",
+      searchTerms: ["olivenolie"],
+      category: "pantry",
+    });
+    const dealMap = new Map([["olivenolie", [offer]]]);
+    const result = findBestDeal(ing, dealMap, new Set());
+    // Modifier match should be low confidence (if it passes viability at all)
+    if (result.best) {
+      expect(result.confidence).toBe("low");
+    } else {
+      expect(result.confidence).toBe("none");
+    }
+  });
+
+  it("returns up to 3 candidates", () => {
+    const offer1 = makeOffer({ id: "a", heading: "Hakket oksekød", price: 45 });
+    const offer2 = makeOffer({
+      id: "b",
+      heading: "Oksekød i strimler",
+      price: 55,
+    });
+    const offer3 = makeOffer({ id: "c", heading: "Fersk oksekød", price: 50 });
+    const offer4 = makeOffer({ id: "d", heading: "Dansk oksekød", price: 60 });
+    const ing = makeIngredient({ searchTerms: ["oksekød"], category: "dairy" });
+    const dealMap = new Map([["oksekød", [offer1, offer2, offer3, offer4]]]);
+    const result = findBestDeal(ing, dealMap, new Set());
+    expect(result.candidates.length).toBeLessThanOrEqual(3);
   });
 });
 
@@ -349,8 +575,7 @@ describe("findOptimalWeek", () => {
       maxPerProtein: 2,
     });
     expect(result).not.toBeNull();
-    const chickenCount =
-      result?.recipes.filter((r) => r.proteinType === "chicken").length ?? 0;
+    const chickenCount = result?.recipes.filter((r) => r.proteinType === "chicken").length ?? 0;
     expect(chickenCount).toBeLessThanOrEqual(2);
   });
 
@@ -386,8 +611,7 @@ describe("findOptimalWeek", () => {
       maxPerCuisine: 2,
     });
     expect(result).not.toBeNull();
-    const italianCount =
-      result?.recipes.filter((r) => r.cuisineType === "italian").length ?? 0;
+    const italianCount = result?.recipes.filter((r) => r.cuisineType === "italian").length ?? 0;
     expect(italianCount).toBeLessThanOrEqual(2);
   });
 
@@ -434,8 +658,7 @@ describe("findOptimalWeek", () => {
       maxSlowDays: 1,
     });
     expect(result).not.toBeNull();
-    const slowCount =
-      result?.recipes.filter((r) => r.complexity === "slow").length ?? 0;
+    const slowCount = result?.recipes.filter((r) => r.complexity === "slow").length ?? 0;
     expect(slowCount).toBeLessThanOrEqual(1);
   });
 
@@ -572,8 +795,7 @@ describe("findOptimalWeek", () => {
     });
     expect(result).not.toBeNull();
     // Slow recipe "A" should be on day 3 (position index 2)
-    const slowIdx =
-      result?.recipes.findIndex((r) => r.complexity === "slow") ?? -1;
+    const slowIdx = result?.recipes.findIndex((r) => r.complexity === "slow") ?? -1;
     expect(slowIdx).toBe(2);
   });
 

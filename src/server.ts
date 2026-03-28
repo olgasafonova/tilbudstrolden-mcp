@@ -3,14 +3,11 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import type { Offer } from "./api.js";
-import {
-  getStoreOffers,
-  listStores,
-  searchDeals,
-  searchDealsBatch,
-} from "./api.js";
+import { getStoreOffers, listStores, searchDeals, searchDealsBatch } from "./api.js";
 import {
   calculateBasketCost,
+  computeIngredientCost,
+  type DealCandidate,
   findBestDeal,
   findOptimalWeek,
   type ScoredIngredient,
@@ -90,9 +87,7 @@ server.tool(
         ],
       };
     } catch (err) {
-      return errorResult(
-        `Failed to search deals: ${err instanceof Error ? err.message : err}`,
-      );
+      return errorResult(`Failed to search deals: ${err instanceof Error ? err.message : err}`);
     }
   },
 );
@@ -103,15 +98,12 @@ server.tool(
   {
     store: z
       .string()
-      .describe(
-        `Store name or dealer ID. Known: ${Object.keys(KNOWN_STORES).join(", ")}`,
-      ),
+      .describe(`Store name or dealer ID. Known: ${Object.keys(KNOWN_STORES).join(", ")}`),
     limit: z.number().optional().default(50).describe("Max results"),
   },
   async ({ store: storeName, limit }) => {
     try {
-      const dealerId =
-        KNOWN_STORES[storeName.trim().toLowerCase()] ?? storeName.trim();
+      const dealerId = KNOWN_STORES[storeName.trim().toLowerCase()] ?? storeName.trim();
       const offers = await getStoreOffers(dealerId, limit);
       const name = offers[0]?.store ?? storeName;
       return {
@@ -123,9 +115,7 @@ server.tool(
         ],
       };
     } catch (err) {
-      return errorResult(
-        `Failed to get store offers: ${err instanceof Error ? err.message : err}`,
-      );
+      return errorResult(`Failed to get store offers: ${err instanceof Error ? err.message : err}`);
     }
   },
 );
@@ -135,11 +125,7 @@ server.tool(
   "List Danish grocery chains with dealer IDs",
   {
     query: z.string().optional().describe("Filter by name"),
-    all: z
-      .boolean()
-      .optional()
-      .default(false)
-      .describe("Include non-grocery stores too"),
+    all: z.boolean().optional().default(false).describe("Include non-grocery stores too"),
   },
   async ({ query, all }) => {
     try {
@@ -181,9 +167,7 @@ server.tool(
         ],
       };
     } catch (err) {
-      return errorResult(
-        `Failed to list stores: ${err instanceof Error ? err.message : err}`,
-      );
+      return errorResult(`Failed to list stores: ${err instanceof Error ? err.message : err}`);
     }
   },
 );
@@ -209,10 +193,7 @@ server.tool(
       };
     }
     const people = household.people.map((p) => {
-      const diet =
-        p.dietaryRestrictions.length > 0
-          ? p.dietaryRestrictions.join(", ")
-          : "none";
+      const diet = p.dietaryRestrictions.length > 0 ? p.dietaryRestrictions.join(", ") : "none";
       const days = Object.entries(p.defaultSchedule)
         .filter(([, home]) => home)
         .map(([day]) => day)
@@ -241,9 +222,7 @@ server.tool(
       .array(
         z.object({
           name: z.string().describe("Name"),
-          dietaryRestrictions: z
-            .array(z.string())
-            .describe("e.g. 'no pork', 'lactose-free'"),
+          dietaryRestrictions: z.array(z.string()).describe("e.g. 'no pork', 'lactose-free'"),
           defaultSchedule: z
             .record(z.string(), z.boolean())
             .describe("Days at home, e.g. {monday: true}. Omitted = true."),
@@ -302,16 +281,8 @@ server.tool(
   "update_pantry",
   "Add or remove pantry items (excluded from shopping lists)",
   {
-    add: z
-      .array(z.string())
-      .optional()
-      .default([])
-      .describe("Items to add to pantry"),
-    remove: z
-      .array(z.string())
-      .optional()
-      .default([])
-      .describe("Items to remove from pantry"),
+    add: z.array(z.string()).optional().default([]).describe("Items to add to pantry"),
+    remove: z.array(z.string()).optional().default([]).describe("Items to remove from pantry"),
   },
   async ({ add, remove }) => {
     const pantry = await store.updatePantry(add, remove);
@@ -387,30 +358,19 @@ server.tool(
       .enum(["quick", "medium", "slow"])
       .describe("quick (<30min), medium (30-60min), slow (60min+)"),
     cuisineType: z.string().describe("e.g. asian, danish, italian, mexican"),
-    proteinType: z
-      .string()
-      .describe("e.g. chicken, beef, pork, fish, vegetarian"),
+    proteinType: z.string().describe("e.g. chicken, beef, pork, fish, vegetarian"),
     ingredients: z
       .array(
         z.object({
           name: z.string(),
           quantity: z.string().describe("e.g. '500g', '1L', '2 stk'"),
           searchTerms: z.array(z.string()).describe("Danish deal search terms"),
-          category: z
-            .string()
-            .describe("meat|dairy|produce|bakery|frozen|pantry|drinks|other"),
+          category: z.string().describe("meat|dairy|produce|bakery|frozen|pantry|drinks|other"),
         }),
       )
       .describe("Ingredients"),
   },
-  async ({
-    name,
-    servings,
-    complexity,
-    cuisineType,
-    proteinType,
-    ingredients,
-  }) => {
+  async ({ name, servings, complexity, cuisineType, proteinType, ingredients }) => {
     await store.addRecipe({
       name,
       servings,
@@ -442,9 +402,7 @@ server.tool(
       content: [
         {
           type: "text" as const,
-          text: removed
-            ? `Recipe "${name}" removed.`
-            : `Recipe "${name}" not found.`,
+          text: removed ? `Recipe "${name}" removed.` : `Recipe "${name}" not found.`,
         },
       ],
     };
@@ -458,6 +416,7 @@ server.tool(
 async function scoreAllRecipes(
   preferredStoreNames: Set<string>,
   pantrySet: Set<string>,
+  householdSize: number,
 ): Promise<ScoredRecipe[]> {
   const recipes = await store.getRecipes();
   if (recipes.length === 0) return [];
@@ -488,20 +447,39 @@ async function scoreAllRecipes(
       if (pantrySet.has(ing.name.toLowerCase())) continue;
       nonPantryCount++;
 
-      const bestOffer = findBestDeal(ing, dealMap, preferredStoreNames);
-      const price = bestOffer?.price ?? 0;
+      const result = findBestDeal(ing, dealMap, preferredStoreNames);
+      const cost = result.best
+        ? computeIngredientCost(result.best, ing.quantity, recipe.servings, householdSize)
+        : 0;
+
+      // Build candidates list for low-confidence matches
+      const candidates: DealCandidate[] | undefined =
+        result.confidence === "low"
+          ? result.candidates.map((c) => ({
+              heading: c.offer.heading,
+              price: c.offer.price ?? 0,
+              store: c.offer.store,
+              score: c.score,
+            }))
+          : undefined;
 
       ingredients.push({
         name: ing.name,
         quantity: ing.quantity,
         category: ing.category,
-        bestDeal: bestOffer
-          ? { heading: bestOffer.heading, price, store: bestOffer.store }
+        bestDeal: result.best
+          ? {
+              heading: result.best.heading,
+              price: cost,
+              store: result.best.store,
+            }
           : null,
-        estimatedCost: price,
+        estimatedCost: cost,
+        confidence: result.confidence,
+        candidates,
       });
-      if (bestOffer) {
-        totalCost += price;
+      if (result.best) {
+        totalCost += cost;
         withDeals++;
       }
     }
@@ -512,19 +490,15 @@ async function scoreAllRecipes(
       complexity: recipe.complexity,
       proteinType: recipe.proteinType,
       cuisineType: recipe.cuisineType,
-      estimatedCost: totalCost,
-      dealCoverage:
-        nonPantryCount > 0
-          ? Math.round((withDeals / nonPantryCount) * 100)
-          : 100,
+      estimatedCost: Math.round(totalCost * 100) / 100,
+      dealCoverage: nonPantryCount > 0 ? Math.round((withDeals / nonPantryCount) * 100) : 100,
       ingredients,
     });
   }
 
   return scored.sort((a, b) => {
     // Primary: higher deal coverage is better
-    if (b.dealCoverage !== a.dealCoverage)
-      return b.dealCoverage - a.dealCoverage;
+    if (b.dealCoverage !== a.dealCoverage) return b.dealCoverage - a.dealCoverage;
     // Secondary: lower cost is better
     return a.estimatedCost - b.estimatedCost;
   });
@@ -535,29 +509,42 @@ function formatScoredRecipes(scored: ScoredRecipe[]): string {
 
   const lines: string[] = [];
   for (const r of scored) {
-    const dealItems = r.ingredients.filter((i) => i.bestDeal);
-    const noDealItems = r.ingredients.filter((i) => !i.bestDeal);
+    const highConf = r.ingredients.filter((i) => i.confidence === "high");
+    const lowConf = r.ingredients.filter((i) => i.confidence === "low");
+    const noDealItems = r.ingredients.filter((i) => i.confidence === "none");
 
     lines.push(
-      `## ${r.name} — ${r.estimatedCost} DKK (deals on ${r.dealCoverage}% of ingredients)`,
+      `## ${r.name} — ${Math.round(r.estimatedCost)} DKK (deals on ${r.dealCoverage}% of ingredients)`,
     );
-    lines.push(
-      `   ${r.complexity} | ${r.cuisineType} | ${r.proteinType} | ${r.servings} servings`,
-    );
-    if (dealItems.length > 0) {
+    lines.push(`   ${r.complexity} | ${r.cuisineType} | ${r.proteinType} | ${r.servings} servings`);
+    if (highConf.length > 0) {
       lines.push(`   Deals:`);
-      for (const i of dealItems) {
+      for (const i of highConf) {
         const deal = i.bestDeal;
         if (!deal) continue;
         lines.push(
-          `     ${i.name} (${i.quantity}): ${deal.heading} — ${deal.price} DKK @ ${deal.store}`,
+          `     ${i.name} (${i.quantity}): ${deal.heading} — ${Math.round(deal.price)} DKK @ ${deal.store}`,
         );
       }
     }
+    if (lowConf.length > 0) {
+      lines.push(`   ⚠ Uncertain matches (verify these):`);
+      for (const i of lowConf) {
+        const deal = i.bestDeal;
+        if (!deal) continue;
+        lines.push(
+          `     ${i.name} (${i.quantity}): ${deal.heading} — ${Math.round(deal.price)} DKK @ ${deal.store} [low confidence]`,
+        );
+        if (i.candidates && i.candidates.length > 1) {
+          lines.push(`       Other candidates:`);
+          for (const c of i.candidates.slice(1)) {
+            lines.push(`         - ${c.heading} — ${c.price} DKK @ ${c.store} (score: ${c.score})`);
+          }
+        }
+      }
+    }
     if (noDealItems.length > 0) {
-      lines.push(
-        `   No deals: ${noDealItems.map((i) => `${i.name} (${i.quantity})`).join(", ")}`,
-      );
+      lines.push(`   No deals: ${noDealItems.map((i) => `${i.name} (${i.quantity})`).join(", ")}`);
     }
     lines.push("");
   }
@@ -568,27 +555,11 @@ server.tool(
   "score_recipes",
   "Score recipes against current deals, optionally optimize a weekly meal plan",
   {
-    optimize: z
-      .boolean()
-      .optional()
-      .default(false)
-      .describe("Also generate optimal weekly plan"),
+    optimize: z.boolean().optional().default(false).describe("Also generate optimal weekly plan"),
     days: z.number().optional().default(7).describe("Days to plan"),
-    maxPerProtein: z
-      .number()
-      .optional()
-      .default(2)
-      .describe("Max same protein in plan"),
-    maxPerCuisine: z
-      .number()
-      .optional()
-      .default(2)
-      .describe("Max same cuisine in plan"),
-    maxSlowDays: z
-      .number()
-      .optional()
-      .default(2)
-      .describe("Max slow-cook days in plan"),
+    maxPerProtein: z.number().optional().default(2).describe("Max same protein in plan"),
+    maxPerCuisine: z.number().optional().default(2).describe("Max same cuisine in plan"),
+    maxSlowDays: z.number().optional().default(2).describe("Max slow-cook days in plan"),
     excludeProteins: z
       .array(z.string())
       .optional()
@@ -602,9 +573,7 @@ server.tool(
     slowOnlyOnDays: z
       .array(z.number())
       .optional()
-      .describe(
-        "Restrict slow recipes to these days only (1-indexed). E.g. [6, 7] for weekends",
-      ),
+      .describe("Restrict slow recipes to these days only (1-indexed). E.g. [6, 7] for weekends"),
   },
   async ({
     optimize,
@@ -622,7 +591,8 @@ server.tool(
       const pantrySet = new Set(pantry.map((p) => p.toLowerCase()));
       const preferredStores = new Set(household.stores.map((s) => s.name));
 
-      const scored = await scoreAllRecipes(preferredStores, pantrySet);
+      const householdSize = household.people.length || household.defaultServings;
+      const scored = await scoreAllRecipes(preferredStores, pantrySet, householdSize);
       const parts: string[] = [];
 
       parts.push(`# Recipe scores (${scored.length} recipes)\n`);
@@ -645,9 +615,7 @@ server.tool(
           const basket = calculateBasketCost(bestPlan.recipes);
           parts.push(`Total basket: ~${basket.totalCost} DKK for ${days} days`);
           if (basket.sharedSavings > 0) {
-            parts.push(
-              `Shared ingredient savings: ~${basket.sharedSavings} DKK`,
-            );
+            parts.push(`Shared ingredient savings: ~${basket.sharedSavings} DKK`);
           }
           parts.push(`Unique items to buy: ${basket.uniqueIngredients}\n`);
           for (let i = 0; i < bestPlan.recipes.length; i++) {
@@ -667,9 +635,7 @@ server.tool(
         content: [{ type: "text" as const, text: parts.join("\n") }],
       };
     } catch (err) {
-      return errorResult(
-        `Failed to score recipes: ${err instanceof Error ? err.message : err}`,
-      );
+      return errorResult(`Failed to score recipes: ${err instanceof Error ? err.message : err}`);
     }
   },
 );
@@ -717,9 +683,7 @@ server.tool(
         ],
       };
     }
-    const lines = history.map(
-      (m) => `- ${m.date}: ${m.recipe} (${m.people.join(", ")})`,
-    );
+    const lines = history.map((m) => `- ${m.date}: ${m.recipe} (${m.people.join(", ")})`);
     return {
       content: [
         {
@@ -808,11 +772,7 @@ server.tool(
   "Deal-optimized shopping list from recipes, grouped by store",
   {
     recipes: z.array(z.string()).describe("Recipe names"),
-    excludePantry: z
-      .boolean()
-      .optional()
-      .default(true)
-      .describe("Skip pantry items"),
+    excludePantry: z.boolean().optional().default(true).describe("Skip pantry items"),
   },
   async ({ recipes: recipeNames, excludePantry }) => {
     try {
@@ -893,29 +853,36 @@ server.tool(
       }
       const dealMap = await searchDealsBatch([...allSearchTerms], 8);
 
-      for (const [, ing] of allIngredients) {
-        const bestOffer = findBestDeal(ing, dealMap, preferredStores);
+      const uncertainItems: string[] = [];
 
-        if (bestOffer) {
-          const best = bestOffer;
+      for (const [, ing] of allIngredients) {
+        const result = findBestDeal(ing, dealMap, preferredStores);
+
+        if (result.best) {
+          const best = result.best;
           const storeName = best.store;
           const validTo = best.validUntil?.slice(0, 10) ?? "unknown";
-          const line = `${ing.name} (${ing.quantity}): ${best.heading} - ${best.price} ${best.currency}${best.pricePerUnit ? ` (${best.pricePerUnit})` : ""} valid until ${validTo}`;
+          const conf = result.confidence === "low" ? " ⚠" : "";
+          const line = `${ing.name} (${ing.quantity}): ${best.heading} - ${best.price} ${best.currency}${best.pricePerUnit ? ` (${best.pricePerUnit})` : ""} valid until ${validTo}${conf}`;
           const storeList = byStore.get(storeName) ?? [];
           storeList.push(line);
           byStore.set(storeName, storeList);
+
+          if (result.confidence === "low" && result.candidates.length > 1) {
+            const alts = result.candidates
+              .slice(1)
+              .map((c) => `${c.offer.heading} - ${c.offer.price} DKK @ ${c.offer.store}`)
+              .join("; ");
+            uncertainItems.push(`${ing.name}: picked "${best.heading}" but also found: ${alts}`);
+          }
         } else {
-          regularPrice.push(
-            `${ing.name} (${ing.quantity}) [${ing.fromRecipes.join(", ")}]`,
-          );
+          regularPrice.push(`${ing.name} (${ing.quantity}) [${ing.fromRecipes.join(", ")}]`);
         }
       }
 
       // Format output grouped by store
       const parts: string[] = [];
-      parts.push(
-        `Shopping list for: ${selectedRecipes.map((r) => r.name).join(", ")}`,
-      );
+      parts.push(`Shopping list for: ${selectedRecipes.map((r) => r.name).join(", ")}`);
       parts.push("");
 
       for (const [storeName, items] of byStore) {
@@ -929,6 +896,12 @@ server.tool(
       if (regularPrice.length > 0) {
         parts.push(`## Buy at regular price (${regularPrice.length} items)`);
         for (const u of regularPrice) parts.push(`- ${u}`);
+        parts.push("");
+      }
+
+      if (uncertainItems.length > 0) {
+        parts.push(`## ⚠ Uncertain matches (verify these)`);
+        for (const u of uncertainItems) parts.push(`- ${u}`);
         parts.push("");
       }
 
@@ -954,9 +927,7 @@ server.tool(
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error(
-    `TilbudsTrolden MCP server v${SERVER_VERSION} running on stdio`,
-  );
+  console.error(`TilbudsTrolden MCP server v${SERVER_VERSION} running on stdio`);
 }
 
 main().catch((err) => {
