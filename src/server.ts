@@ -1207,7 +1207,7 @@ server.tool(
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error("Smart Shopper MCP server v0.2.0 running on stdio");
+  console.error("Smart Shopper MCP server v0.3.0 running on stdio");
 }
 
 main().catch((err) => {

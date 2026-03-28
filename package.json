@@ -1,6 +1,6 @@
 {
   "name": "smart-shopper-mcp",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "type": "module",
   "description": "MCP server for Danish grocery deal hunting — search offers from Netto, Meny, Lidl and more via etilbudsavis.dk",
   "scripts": {
