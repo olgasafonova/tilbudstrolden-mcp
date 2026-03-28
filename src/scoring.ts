@@ -229,6 +229,41 @@ export const RAW_INDICATORS = [
   "bov",
 ];
 
+/**
+ * Headings containing these terms are not raw grocery ingredients.
+ * Matched against lowercased heading; returns 0 immediately.
+ */
+export const NON_INGREDIENT_INDICATORS = [
+  // Garden / DIY products
+  "frø,",
+  "frø ",
+  "såfrø",
+  "blomsterløg",
+  // Ready meals and prepared dishes
+  "tærte",
+  "omelet",
+  "gratin",
+  "gryderet",
+  "færdigret",
+  "risretter",
+  "risret",
+  "snack pot",
+  "kopnudler",
+  "instant ",
+  "flødekartofler",
+  // Non-food products
+  "vaseline",
+  "shampoo",
+  "sæbe",
+  "opvask",
+  // Beverages when searching for food items
+  "sodavand",
+  "energidrik",
+  "skummetmælk", // flavored milk drink, not cooking milk
+  // Pizza / ready food
+  "pizza",
+];
+
 // --- Scoring weights ---
 
 export const SCORE = {
@@ -254,7 +289,14 @@ export const SCORE = {
  * is a modifier/addition, not the primary product.
  * "Tunfilet i olivenolie" → olivenolie is a modifier.
  */
-const MODIFIER_PREPOSITIONS = [" i ", " med ", " og ", " på ", " til ", " fra "];
+const MODIFIER_PREPOSITIONS = [
+  " i ",
+  " med ",
+  " og ",
+  " på ",
+  " til ",
+  " fra ",
+];
 
 /**
  * Check if the search term appears only in a modifier position
@@ -284,13 +326,20 @@ export function scoreDealMatch(
 
   const heading = offer.heading.toLowerCase();
   const term = searchTerm.toLowerCase();
+
+  // Reject non-ingredient products (garden seeds, ready meals, non-food)
+  if (NON_INGREDIENT_INDICATORS.some((ind) => heading.includes(ind))) return 0;
+
   let score = SCORE.BASE;
 
+  // Hard-exclude non-preferred stores when preferences are configured
   if (preferredStores.size > 0) {
-    score += preferredStores.has(offer.store)
-      ? SCORE.PREFERRED_STORE_BONUS
-      : SCORE.NON_PREFERRED_PENALTY;
+    if (!preferredStores.has(offer.store)) return 0;
+    score += SCORE.PREFERRED_STORE_BONUS;
   }
+
+  const isBundleHeading =
+    heading.includes(" eller ") || heading.includes(" el. ");
 
   if (ingredient.category === "meat" || ingredient.category === "frozen") {
     const isProcessed = PROCESSED_INDICATORS.some((p) => heading.includes(p));
@@ -302,9 +351,15 @@ export function scoreDealMatch(
       score += SCORE.RAW_BONUS;
     }
 
-    if (heading.includes(" eller ") && isProcessed) {
+    if (isBundleHeading && isProcessed) {
       score += SCORE.BUNDLE_UNCERTAINTY_PENALTY;
     }
+  }
+
+  // Penalize ambiguous "X eller Y" / "X el. Y" bundles for all categories
+  // ("Pasta eller pastasauce", "Knorr Lasagne el. Risretter")
+  if (isBundleHeading) {
+    score += SCORE.PARTIAL_MATCH_BONUS - SCORE.EXACT_MATCH_BONUS; // net -15
   }
 
   // Text matching with modifier detection
@@ -345,7 +400,12 @@ export function findBestDeal(
   for (const term of ing.searchTerms) {
     const offers = dealMap.get(term) ?? [];
     for (const offer of offers) {
-      const matchScore = scoreDealMatch(offer, ing as Ingredient, term, preferredStores);
+      const matchScore = scoreDealMatch(
+        offer,
+        ing as Ingredient,
+        term,
+        preferredStores,
+      );
       if (matchScore < SCORE.VIABILITY_THRESHOLD) continue;
       allScored.push({ offer, score: matchScore });
     }
@@ -439,7 +499,10 @@ function isAllowedOnDay(
   return true;
 }
 
-function isValidCombo(combo: ScoredRecipe[], constraints: VarietyConstraints): boolean {
+function isValidCombo(
+  combo: ScoredRecipe[],
+  constraints: VarietyConstraints,
+): boolean {
   const proteinCount: Record<string, number> = {};
   const cuisineCount: Record<string, number> = {};
   let slowCount = 0;
@@ -491,7 +554,9 @@ function findOptimalGreedy(
   days: number,
   constraints: VarietyConstraints,
 ): { recipes: ScoredRecipe[]; basketCost: number } | null {
-  const byBasketValue = [...scored].sort((a, b) => a.estimatedCost - b.estimatedCost);
+  const byBasketValue = [...scored].sort(
+    (a, b) => a.estimatedCost - b.estimatedCost,
+  );
   const picked: (ScoredRecipe | null)[] = new Array(days).fill(null);
   const used = new Set<string>();
   const proteinCount: Record<string, number> = {};
@@ -504,14 +569,19 @@ function findOptimalGreedy(
     for (const recipe of byBasketValue) {
       if (used.has(recipe.name)) continue;
       if (!isAllowedOnDay(recipe, day, constraints)) continue;
-      if ((proteinCount[recipe.proteinType] ?? 0) >= constraints.maxPerProtein) continue;
-      if ((cuisineCount[recipe.cuisineType] ?? 0) >= constraints.maxPerCuisine) continue;
-      if (recipe.complexity === "slow" && slowCount >= constraints.maxSlowDays) continue;
+      if ((proteinCount[recipe.proteinType] ?? 0) >= constraints.maxPerProtein)
+        continue;
+      if ((cuisineCount[recipe.cuisineType] ?? 0) >= constraints.maxPerCuisine)
+        continue;
+      if (recipe.complexity === "slow" && slowCount >= constraints.maxSlowDays)
+        continue;
 
       picked[dayIdx] = recipe;
       used.add(recipe.name);
-      proteinCount[recipe.proteinType] = (proteinCount[recipe.proteinType] ?? 0) + 1;
-      cuisineCount[recipe.cuisineType] = (cuisineCount[recipe.cuisineType] ?? 0) + 1;
+      proteinCount[recipe.proteinType] =
+        (proteinCount[recipe.proteinType] ?? 0) + 1;
+      cuisineCount[recipe.cuisineType] =
+        (cuisineCount[recipe.cuisineType] ?? 0) + 1;
       if (recipe.complexity === "slow") slowCount++;
       break;
     }
@@ -548,12 +618,15 @@ function findOptimalBrute(
   }
 
   const hasDayConstraints =
-    (constraints.excludeProteins?.length ?? 0) > 0 || (constraints.slowOnlyOnDays?.length ?? 0) > 0;
+    (constraints.excludeProteins?.length ?? 0) > 0 ||
+    (constraints.slowOnlyOnDays?.length ?? 0) > 0;
 
   if (hasDayConstraints) {
     // Permutations needed: order matters for day-specific constraints.
     // Limit search space: pre-sort by cost and cap candidates.
-    const candidates = [...scored].sort((a, b) => a.estimatedCost - b.estimatedCost).slice(0, 10);
+    const candidates = [...scored]
+      .sort((a, b) => a.estimatedCost - b.estimatedCost)
+      .slice(0, 10);
     for (const perm of permutations(candidates, days)) {
       if (!isValidCombo(perm, constraints)) continue;
       const basket = calculateBasketCost(perm);
@@ -564,7 +637,11 @@ function findOptimalBrute(
     }
   } else {
     // No day-specific constraints: combinations suffice (faster).
-    function* combinations(arr: ScoredRecipe[], k: number, start = 0): Generator<ScoredRecipe[]> {
+    function* combinations(
+      arr: ScoredRecipe[],
+      k: number,
+      start = 0,
+    ): Generator<ScoredRecipe[]> {
       if (k === 0) {
         yield [];
         return;

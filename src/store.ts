@@ -189,7 +189,7 @@ async function saveRaw(data: DataStore): Promise<void> {
 }
 
 export async function load(): Promise<DataStore> {
-  return withLock(() => loadRaw());
+  return loadRaw();
 }
 
 export async function save(data: DataStore): Promise<void> {
@@ -215,7 +215,9 @@ export async function getHousehold(): Promise<Household> {
   return data.household;
 }
 
-export async function updateHousehold(updates: Partial<Household>): Promise<Household> {
+export async function updateHousehold(
+  updates: Partial<Household>,
+): Promise<Household> {
   const result = await modify((s) => {
     s.household = { ...s.household, ...updates };
     if (updates.people) s.household.people = updates.people;
@@ -232,7 +234,10 @@ export async function getPantry(): Promise<string[]> {
   return data.pantry;
 }
 
-export async function updatePantry(add: string[], remove: string[]): Promise<string[]> {
+export async function updatePantry(
+  add: string[],
+  remove: string[],
+): Promise<string[]> {
   const result = await modify((s) => {
     const removeSet = new Set(remove.map((r) => r.toLowerCase()));
     s.pantry = s.pantry.filter((item) => !removeSet.has(item.toLowerCase()));
@@ -266,7 +271,9 @@ export async function getRecipes(): Promise<Recipe[]> {
 
 export async function addRecipe(recipe: Recipe): Promise<void> {
   await modify((s) => {
-    const idx = s.recipes.findIndex((r) => r.name.toLowerCase() === recipe.name.toLowerCase());
+    const idx = s.recipes.findIndex(
+      (r) => r.name.toLowerCase() === recipe.name.toLowerCase(),
+    );
     if (idx >= 0) {
       s.recipes[idx] = recipe;
     } else {
@@ -279,7 +286,9 @@ export async function addRecipe(recipe: Recipe): Promise<void> {
 export async function removeRecipe(name: string): Promise<boolean> {
   let removed = false;
   await modify((s) => {
-    const idx = s.recipes.findIndex((r) => r.name.toLowerCase() === name.toLowerCase());
+    const idx = s.recipes.findIndex(
+      (r) => r.name.toLowerCase() === name.toLowerCase(),
+    );
     if (idx >= 0) {
       s.recipes.splice(idx, 1);
       removed = true;
@@ -304,7 +313,9 @@ export async function getMealHistory(weeks = 4): Promise<MealLogEntry[]> {
 export async function logMeal(entry: MealLogEntry): Promise<void> {
   await modify((s) => {
     const idx = s.mealHistory.findIndex(
-      (m) => m.date === entry.date && m.recipe.toLowerCase() === entry.recipe.toLowerCase(),
+      (m) =>
+        m.date === entry.date &&
+        m.recipe.toLowerCase() === entry.recipe.toLowerCase(),
     );
     if (idx >= 0) {
       s.mealHistory[idx] = entry;

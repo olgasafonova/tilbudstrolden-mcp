@@ -1,7 +1,12 @@
 // etilbudsavis.dk / Tjek API client
 
+import { createRequire } from "node:module";
+
+const require = createRequire(import.meta.url);
+const { version } = require("../package.json") as { version: string };
+
 const BASE_URL = "https://api.etilbudsavis.dk/v2";
-const USER_AGENT = "tilbudstrolden-mcp/0.3.0";
+const USER_AGENT = `tilbudstrolden-mcp/${version}`;
 const FETCH_TIMEOUT_MS = 8000;
 const MAX_RETRIES = 3;
 const RETRY_BASE_MS = 500;
@@ -127,13 +132,17 @@ async function fetchJson<T>(url: string): Promise<T> {
 }
 
 // Simple concurrency limiter for batch operations
-async function withConcurrencyLimit<T>(tasks: (() => Promise<T>)[], limit: number): Promise<T[]> {
-  const results: T[] = [];
+async function withConcurrencyLimit<T>(
+  tasks: (() => Promise<T>)[],
+  limit: number,
+): Promise<T[]> {
+  const results: (T | undefined)[] = new Array(tasks.length);
   const executing: Set<Promise<void>> = new Set();
 
-  for (const task of tasks) {
-    const p = task().then((result) => {
-      results.push(result);
+  for (let i = 0; i < tasks.length; i++) {
+    const idx = i;
+    const p = tasks[idx]().then((result) => {
+      results[idx] = result;
     });
     const tracked = p.finally(() => executing.delete(tracked));
     executing.add(tracked);
@@ -144,7 +153,7 @@ async function withConcurrencyLimit<T>(tasks: (() => Promise<T>)[], limit: numbe
   }
 
   await Promise.all(executing);
-  return results;
+  return results as T[];
 }
 
 // --- Danish store filter ---
@@ -170,7 +179,9 @@ export async function searchDeals(query: string, limit = 20): Promise<Offer[]> {
     query,
     limit: String(limit * 3),
   });
-  const raw = await fetchJson<RawOffer[]>(`${BASE_URL}/offers/search?${params}`);
+  const raw = await fetchJson<RawOffer[]>(
+    `${BASE_URL}/offers/search?${params}`,
+  );
   const danishIds = await getDanishDealerIds();
   return raw
     .map(parseOffer)
@@ -178,7 +189,10 @@ export async function searchDeals(query: string, limit = 20): Promise<Offer[]> {
     .slice(0, limit);
 }
 
-export async function getStoreOffers(dealerId: string, limit = 50): Promise<Offer[]> {
+export async function getStoreOffers(
+  dealerId: string,
+  limit = 50,
+): Promise<Offer[]> {
   const params = new URLSearchParams({
     dealer_id: dealerId,
     limit: String(limit),
