@@ -1,8 +1,9 @@
-// Starter recipe pack: 28 dinner recipes for Danish households.
+// Starter recipe pack: 32 dinner recipes for Danish households.
 // Danish recipes adapted from valdemarsro.dk.
 // Uncle Roger recipes from his YouTube cooking videos (Nigel Ng).
 // Bulgogi from maangchi.com (Maangchi / Emily Kim).
 // Nasi goreng and chow mein based on common versions.
+// Swedish family recipes from jarfors.com.
 
 import type { Recipe } from "./store.js";
 
@@ -2041,6 +2042,322 @@ export const defaultRecipes: Recipe[] = [
         quantity: "100 g",
         searchTerms: ["champignon", "svampe"],
         category: "produce",
+      },
+      {
+        name: "Jasminris",
+        quantity: "3 dl",
+        searchTerms: ["jasminris", "ris"],
+        category: "pantry",
+      },
+    ],
+  },
+  {
+    // Source: https://jarfors.com/recipe/48
+    name: "Kajsas Kycklingfilé med senap og rosépeber",
+    servings: 4,
+    complexity: "quick",
+    cuisineType: "swedish",
+    proteinType: "chicken",
+    ingredients: [
+      {
+        name: "Kyllingefilet",
+        quantity: "4 stk",
+        searchTerms: ["kyllingefilet", "kyllingebryst", "kylling"],
+        category: "meat",
+      },
+      {
+        name: "Fransk sennep (Dijon)",
+        quantity: "2 spsk",
+        searchTerms: ["dijon", "sennep", "fransk sennep"],
+        category: "pantry",
+      },
+      {
+        name: "Rosépeber",
+        quantity: "0.5 spsk",
+        searchTerms: ["rosépeber", "rosa peber", "peber"],
+        category: "pantry",
+      },
+      {
+        name: "Oksebouillon",
+        quantity: "0.5 terning",
+        searchTerms: ["bouillon", "oksebouillon"],
+        category: "pantry",
+      },
+      {
+        name: "Hvidvin",
+        quantity: "1-2 dl",
+        searchTerms: ["hvidvin", "vin"],
+        category: "pantry",
+      },
+      {
+        name: "Crème fraîche",
+        quantity: "1 bøtte",
+        searchTerms: ["creme fraiche", "crème fraîche"],
+        category: "dairy",
+      },
+      {
+        name: "Fløde",
+        quantity: "1 dl",
+        searchTerms: ["fløde", "piskefløde"],
+        category: "dairy",
+      },
+      {
+        name: "Estragon",
+        quantity: "0.25 tsk",
+        searchTerms: ["estragon", "dragon"],
+        category: "pantry",
+      },
+    ],
+  },
+  {
+    // Source: https://jarfors.com/recipe/40
+    name: "Grillet laks med tomatsmør",
+    servings: 5,
+    complexity: "medium",
+    cuisineType: "swedish",
+    proteinType: "fish",
+    ingredients: [
+      {
+        name: "Laks (frossen)",
+        quantity: "1-1.5 kg",
+        searchTerms: ["laks", "laksfilet", "frossen laks"],
+        category: "fish",
+      },
+      {
+        name: "Løg (hakket)",
+        quantity: "2 tsk",
+        searchTerms: ["løg"],
+        category: "produce",
+      },
+      {
+        name: "Citronsaft",
+        quantity: "1 spsk",
+        searchTerms: ["citron", "citronsaft"],
+        category: "produce",
+      },
+      {
+        name: "Olie",
+        quantity: "2.5 spsk",
+        searchTerms: ["olie", "rapsolie", "olivenolie"],
+        category: "pantry",
+      },
+      {
+        name: "Sort peber",
+        quantity: "1 knivspids",
+        searchTerms: ["sort peber", "peber"],
+        category: "pantry",
+      },
+      {
+        name: "Timian",
+        quantity: "1 knivspids",
+        searchTerms: ["timian"],
+        category: "pantry",
+      },
+      {
+        name: "Salt",
+        quantity: "1 tsk",
+        searchTerms: ["salt"],
+        category: "pantry",
+      },
+      {
+        name: "Smør",
+        quantity: "125 g",
+        searchTerms: ["smør", "lurpak"],
+        category: "dairy",
+      },
+      {
+        name: "Tomatpuré",
+        quantity: "2 spsk",
+        searchTerms: ["tomatpuré", "tomat puré"],
+        category: "pantry",
+      },
+      {
+        name: "Kartofler",
+        quantity: "800 g",
+        searchTerms: ["kartofler"],
+        category: "produce",
+      },
+    ],
+  },
+  {
+    // Source: https://jarfors.com/recipe/18
+    name: "Sagas Krydderisauce",
+    servings: 4,
+    complexity: "medium",
+    cuisineType: "swedish",
+    proteinType: "beef",
+    ingredients: [
+      {
+        name: "Oksekød (i tern)",
+        quantity: "500 g",
+        searchTerms: ["oksekød", "oksekød i tern", "grydekød"],
+        category: "meat",
+      },
+      {
+        name: "Margarine",
+        quantity: "2-3 spsk",
+        searchTerms: ["margarine", "smør"],
+        category: "dairy",
+      },
+      {
+        name: "Tomatpuré",
+        quantity: "3 spsk",
+        searchTerms: ["tomatpuré", "tomat puré"],
+        category: "pantry",
+      },
+      {
+        name: "Oksebouillon",
+        quantity: "4-5 dl",
+        searchTerms: ["bouillon", "oksebouillon"],
+        category: "pantry",
+      },
+      {
+        name: "Hvidløg",
+        quantity: "2 fed",
+        searchTerms: ["hvidløg"],
+        category: "produce",
+      },
+      {
+        name: "Paprika (krydderi)",
+        quantity: "1 tsk",
+        searchTerms: ["paprika"],
+        category: "pantry",
+      },
+      {
+        name: "Chilipulver",
+        quantity: "1 tsk",
+        searchTerms: ["chilipulver", "chili"],
+        category: "pantry",
+      },
+      {
+        name: "Timian",
+        quantity: "1 tsk",
+        searchTerms: ["timian"],
+        category: "pantry",
+      },
+      {
+        name: "Estragon",
+        quantity: "1 tsk",
+        searchTerms: ["estragon", "dragon"],
+        category: "pantry",
+      },
+      {
+        name: "Sort peber",
+        quantity: "1 knivspids",
+        searchTerms: ["sort peber", "peber"],
+        category: "pantry",
+      },
+      {
+        name: "Kartoffelmel",
+        quantity: "1 spsk",
+        searchTerms: ["kartoffelmel", "maizena"],
+        category: "pantry",
+      },
+      {
+        name: "Piskefløde",
+        quantity: "1 dl",
+        searchTerms: ["piskefløde", "fløde"],
+        category: "dairy",
+      },
+      {
+        name: "Sukker",
+        quantity: "0.5 tsk",
+        searchTerms: ["sukker"],
+        category: "pantry",
+      },
+      {
+        name: "Ris",
+        quantity: "3 dl",
+        searchTerms: ["ris", "jasminris"],
+        category: "pantry",
+      },
+    ],
+  },
+  {
+    // Source: https://jarfors.com/recipe/52
+    name: "Fransk grillet kylling med dragonsauce",
+    servings: 4,
+    complexity: "medium",
+    cuisineType: "swedish",
+    proteinType: "chicken",
+    ingredients: [
+      {
+        name: "Hel kylling",
+        quantity: "ca 1600 g",
+        searchTerms: ["hel kylling", "kylling"],
+        category: "meat",
+      },
+      {
+        name: "Estragon",
+        quantity: "3 spsk + 1 tsk",
+        searchTerms: ["estragon", "dragon"],
+        category: "pantry",
+      },
+      {
+        name: "Sojasauce",
+        quantity: "0.5 spsk",
+        searchTerms: ["sojasauce", "soja"],
+        category: "pantry",
+      },
+      {
+        name: "Rapsolie",
+        quantity: "1 spsk",
+        searchTerms: ["rapsolie", "olie"],
+        category: "pantry",
+      },
+      {
+        name: "Hvidløg",
+        quantity: "2 fed",
+        searchTerms: ["hvidløg"],
+        category: "produce",
+      },
+      {
+        name: "Margarine",
+        quantity: "1 spsk",
+        searchTerms: ["margarine", "smør"],
+        category: "dairy",
+      },
+      {
+        name: "Skalotteløg",
+        quantity: "2 spsk (hakket)",
+        searchTerms: ["skalotteløg", "løg"],
+        category: "produce",
+      },
+      {
+        name: "Hønsebouillon",
+        quantity: "1 dl",
+        searchTerms: ["hønsebouillon", "kyllingebouillon"],
+        category: "pantry",
+      },
+      {
+        name: "Dijon sennep",
+        quantity: "1 tsk",
+        searchTerms: ["dijon", "sennep"],
+        category: "pantry",
+      },
+      {
+        name: "Mousserende vin",
+        quantity: "2 dl",
+        searchTerms: ["mousserende vin", "cava", "prosecco"],
+        category: "pantry",
+      },
+      {
+        name: "Kaffefløde",
+        quantity: "1 dl",
+        searchTerms: ["kaffefløde", "fløde"],
+        category: "dairy",
+      },
+      {
+        name: "Mel",
+        quantity: "2 spsk",
+        searchTerms: ["mel", "hvedemel"],
+        category: "pantry",
+      },
+      {
+        name: "Mælk",
+        quantity: "2 dl",
+        searchTerms: ["mælk", "letmælk"],
+        category: "dairy",
       },
       {
         name: "Jasminris",
