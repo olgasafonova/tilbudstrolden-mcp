@@ -1,17 +1,58 @@
-# tilbudstrolden-mcp
+# TilbudsTrolden
 
-TilbudsTrolden ("the deal troll") is an MCP server for Danish grocery deal hunting. It searches current offers from Netto, Meny, Lidl, Rema 1000, Fotex, Bilka, Aldi, and Spar via the etilbudsavis.dk API.
+**The deal troll that lives under the bridge between your fridge and your wallet.**
 
-## What it does
+<p align="center">
+  <img src="assets/trolden-cooking.png" alt="TilbudsTrolden cooking up deals" width="400" />
+</p>
 
-- Search deals across all Danish grocery stores by keyword
-- Browse current offers from a specific store
-- Save recipes with Danish search terms per ingredient
-- Score recipes against current deals (which meals are cheapest this week?)
-- Generate deal-optimized shopping lists grouped by store
-- Track household members, dietary restrictions, and weekly schedules
-- Manage a pantry (items you already have get excluded)
-- Log meals and spending for rotation and budget tracking
+An MCP server that searches Danish grocery chains for current deals, scores your recipes against this week's offers, and builds shopping lists optimized by price and store. You talk to your AI assistant about dinner; the troll does the legwork.
+
+## What can you do with it?
+
+**"What's cheap at Netto right now?"** Browse current offers from any Danish store.
+
+**"Find me the cheapest hakket oksekoed across all stores."** Search deals by keyword and compare unit prices side by side.
+
+**"I want to make osso buco. Where should I buy the ingredients?"** The troll searches for each ingredient across all stores and finds the best match, distinguishing raw cuts from processed deli products. It won't suggest roget laks when you need fresh salmon.
+
+**"Score my recipes against this week's deals."** Save your go-to recipes with Danish search terms per ingredient. The scoring engine checks current offers, ranks recipes by deal coverage, and tells you which meals are cheapest to cook this week.
+
+**"Plan next week's dinners."** Generate an optimized weekly meal plan that minimizes total basket cost while keeping protein variety (no chicken five nights in a row). Then export a shopping list grouped by store.
+
+**"We already have onions and rice."** Track your pantry. Items you have at home get excluded from shopping lists and scoring.
+
+## Supported stores
+
+Netto, Meny, Lidl, REMA 1000, Foetex, Bilka, Spar, Kvickly, 365discount, and any other chain listed on etilbudsavis.dk.
+
+## Tools
+
+### Deals
+- **search_deals** - Search current offers across all Danish stores by keyword
+- **get_store_offers** - Browse this week's offers from a specific store
+- **list_stores** - List available grocery chains
+
+### Household
+- **get_household / update_household** - Configure household members, dietary restrictions, preferred stores, and default servings
+
+### Pantry
+- **get_pantry / update_pantry** - Track what you already have at home (excluded from shopping lists)
+
+### Recipes
+- **add_recipe / get_recipes / remove_recipe** - Save recipes with ingredients, Danish search terms, complexity, cuisine type, and protein type
+
+### Planning
+- **score_recipes** - Score all saved recipes against current deals; optionally generate an optimized weekly meal plan
+- **generate_shopping_list** - Build a deal-optimized shopping list from selected recipes, grouped by store
+
+### Tracking
+- **log_meal / get_meal_history** - Record what you cooked and when
+- **log_spend / get_spend_log** - Track grocery spending over time
+
+## How deal matching works
+
+Danish grocery deals bundle products in creative ways ("Rejer, kold- eller varmroget laks"). The scoring engine handles this by classifying products as raw or processed using Danish food terminology. Searching for "laks" as a cooking ingredient won't match roget laks or palaeg. Store preferences from your household config influence ranking, so your closest stores get priority.
 
 ## Setup
 
@@ -22,7 +63,7 @@ npm run build
 
 ### Claude Desktop
 
-Add to your Claude Desktop config:
+Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
 ```json
 {
@@ -41,34 +82,10 @@ Add to your Claude Desktop config:
 claude mcp add tilbudstrolden node /path/to/tilbudstrolden-mcp/dist/server.js
 ```
 
-## Tools
-
-### Deals
-- `search_deals` - Search current grocery deals by keyword (e.g. "kylling", "maelk")
-- `get_store_offers` - List current offers from a specific store
-- `list_stores` - List Danish grocery chains with dealer IDs
-
-### Household
-- `get_household` / `update_household` - Configure people, dietary restrictions, preferred stores
-
-### Pantry
-- `get_pantry` / `update_pantry` - Track what you already have at home
-
-### Recipes
-- `get_recipes` / `add_recipe` / `remove_recipe` - Manage recipes with ingredients and Danish search terms
-
-### Planning
-- `score_recipes` - Score all recipes against current deals; optionally optimize a weekly meal plan
-- `generate_shopping_list` - Build a deal-optimized shopping list from selected recipes
-
-### Tracking
-- `log_meal` / `get_meal_history` - Record and review what was cooked
-- `log_spend` / `get_spend_log` - Track grocery spending
-
 ## Data storage
 
-All data (household, recipes, pantry, meal history, spending) is stored in `~/.tilbudstrolden.json`. Override with the `TILBUDSTROLDEN_DATA` environment variable.
+All data (household, recipes, pantry, meal history, spending) lives in `~/.tilbudstrolden.json`. Override the path with the `TILBUDSTROLDEN_DATA` environment variable.
 
-## Deal matching
+## Powered by
 
-The scoring engine distinguishes raw ingredients from processed products. Searching for "laks" won't match "roget laks" when you need fresh salmon for cooking. Store preferences from your household config influence scoring.
+Deal data from [etilbudsavis.dk](https://etilbudsavis.dk). No API key required.
