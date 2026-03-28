@@ -1,5 +1,9 @@
 # TilbudsTrolden
 
+[![CI](https://github.com/olgasafonova/tilbudstrolden-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/olgasafonova/tilbudstrolden-mcp/actions/workflows/ci.yml)
+[![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue)](https://www.typescriptlang.org/)
+[![Biome](https://img.shields.io/badge/linter-Biome-60a5fa)](https://biomejs.dev/)
+
 **The deal troll that lives under the bridge between your fridge and your wallet.**
 
 <p align="center">

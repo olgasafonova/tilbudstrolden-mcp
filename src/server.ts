@@ -1,14 +1,15 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-
-import {
-  searchDeals,
-  searchDealsBatch,
-  getStoreOffers,
-  listStores,
-} from "./api.js";
 import type { Offer } from "./api.js";
+import { getStoreOffers, listStores, searchDeals, searchDealsBatch } from "./api.js";
+import {
+  calculateBasketCost,
+  findBestDeal,
+  findOptimalWeek,
+  type ScoredIngredient,
+  type ScoredRecipe,
+} from "./scoring.js";
 import * as store from "./store.js";
 
 const KNOWN_STORES: Record<string, string> = {
@@ -32,7 +33,7 @@ function formatOffer(o: Offer): string {
   if (o.pricePerUnit) parts.push(`(${o.pricePerUnit})`);
   parts.push(`@ ${o.store}`);
   if (o.prePrice) parts.push(`was ${o.prePrice} ${o.currency}`);
-  const validTo = o.validUntil.slice(0, 10);
+  const validTo = o.validUntil?.slice(0, 10) ?? "unknown";
   parts.push(`valid until ${validTo}`);
   return parts.join(" ");
 }
@@ -55,14 +56,8 @@ server.tool(
   "search_deals",
   "Search current grocery deals across Danish stores by keyword (e.g. 'kylling', 'mælk', 'oksekød')",
   {
-    query: z
-      .string()
-      .describe("Search term in Danish (e.g. 'hakket oksekød', 'æg', 'smør')"),
-    limit: z
-      .number()
-      .optional()
-      .default(20)
-      .describe("Max results (default 20)"),
+    query: z.string().describe("Search term in Danish (e.g. 'hakket oksekød', 'æg', 'smør')"),
+    limit: z.number().optional().default(20).describe("Max results (default 20)"),
   },
   async ({ query, limit }) => {
     const offers = await searchDeals(query, limit);
@@ -83,14 +78,8 @@ server.tool(
   {
     store: z
       .string()
-      .describe(
-        `Store name or dealer ID. Known: ${Object.keys(KNOWN_STORES).join(", ")}`,
-      ),
-    limit: z
-      .number()
-      .optional()
-      .default(50)
-      .describe("Max results (default 50)"),
+      .describe(`Store name or dealer ID. Known: ${Object.keys(KNOWN_STORES).join(", ")}`),
+    limit: z.number().optional().default(50).describe("Max results (default 50)"),
   },
   async ({ store: storeName, limit }) => {
     const dealerId = KNOWN_STORES[storeName.toLowerCase()] ?? storeName;
@@ -185,10 +174,7 @@ server.tool(
       };
     }
     const people = household.people.map((p) => {
-      const diet =
-        p.dietaryRestrictions.length > 0
-          ? p.dietaryRestrictions.join(", ")
-          : "none";
+      const diet = p.dietaryRestrictions.length > 0 ? p.dietaryRestrictions.join(", ") : "none";
       const days = Object.entries(p.defaultSchedule)
         .filter(([, home]) => home)
         .map(([day]) => day)
@@ -239,10 +225,7 @@ server.tool(
       )
       .optional()
       .describe("Preferred stores in priority order"),
-    defaultServings: z
-      .number()
-      .optional()
-      .describe("Default number of servings"),
+    defaultServings: z.number().optional().describe("Default number of servings"),
   },
   async ({ people, stores: storePrefs, defaultServings }) => {
     const updates: Partial<store.Household> = {};
@@ -283,16 +266,8 @@ server.tool(
   "update_pantry",
   "Add or remove items from pantry (items at home that don't need to be bought)",
   {
-    add: z
-      .array(z.string())
-      .optional()
-      .default([])
-      .describe("Items to add to pantry"),
-    remove: z
-      .array(z.string())
-      .optional()
-      .default([])
-      .describe("Items to remove from pantry"),
+    add: z.array(z.string()).optional().default([]).describe("Items to add to pantry"),
+    remove: z.array(z.string()).optional().default([]).describe("Items to remove from pantry"),
   },
   async ({ add, remove }) => {
     const pantry = await store.updatePantry(add, remove);
@@ -376,26 +351,18 @@ server.tool(
     servings: z.number().optional().default(4).describe("Number of servings"),
     complexity: z
       .enum(["quick", "medium", "slow"])
-      .describe(
-        "Cooking complexity: quick (<30min), medium (30-60min), slow (60min+)",
-      ),
+      .describe("Cooking complexity: quick (<30min), medium (30-60min), slow (60min+)"),
     cuisineType: z
       .string()
-      .describe(
-        "Cuisine type (e.g. asian, danish, italian, mexican, middle-eastern)",
-      ),
+      .describe("Cuisine type (e.g. asian, danish, italian, mexican, middle-eastern)"),
     proteinType: z
       .string()
-      .describe(
-        "Main protein (e.g. chicken, beef, pork, fish, vegetarian, vegan)",
-      ),
+      .describe("Main protein (e.g. chicken, beef, pork, fish, vegetarian, vegan)"),
     ingredients: z
       .array(
         z.object({
           name: z.string().describe("Ingredient name"),
-          quantity: z
-            .string()
-            .describe("Amount needed (e.g. '500g', '1L', '2 stk')"),
+          quantity: z.string().describe("Amount needed (e.g. '500g', '1L', '2 stk')"),
           searchTerms: z
             .array(z.string())
             .describe(
@@ -403,21 +370,12 @@ server.tool(
             ),
           category: z
             .string()
-            .describe(
-              "Category: meat, dairy, produce, bakery, frozen, pantry, drinks, other",
-            ),
+            .describe("Category: meat, dairy, produce, bakery, frozen, pantry, drinks, other"),
         }),
       )
       .describe("List of ingredients"),
   },
-  async ({
-    name,
-    servings,
-    complexity,
-    cuisineType,
-    proteinType,
-    ingredients,
-  }) => {
+  async ({ name, servings, complexity, cuisineType, proteinType, ingredients }) => {
     await store.addRecipe({
       name,
       servings,
@@ -449,9 +407,7 @@ server.tool(
       content: [
         {
           type: "text" as const,
-          text: removed
-            ? `Recipe "${name}" removed.`
-            : `Recipe "${name}" not found.`,
+          text: removed ? `Recipe "${name}" removed.` : `Recipe "${name}" not found.`,
         },
       ],
     };
@@ -461,142 +417,6 @@ server.tool(
 // ============================================================
 // Recipe scoring & weekly optimization
 // ============================================================
-
-interface ScoredIngredient {
-  name: string;
-  quantity: string;
-  category: string;
-  bestDeal: { heading: string; price: number; store: string } | null;
-  estimatedCost: number; // 0 if no deal found (regular price unknown)
-}
-
-interface ScoredRecipe {
-  name: string;
-  servings: number;
-  complexity: string;
-  proteinType: string;
-  cuisineType: string;
-  estimatedCost: number; // sum of ingredient deal prices (deals only)
-  dealCoverage: number; // % of non-pantry ingredients with deals
-  ingredients: ScoredIngredient[];
-}
-
-// Indicators that a deal is a processed/prepared product, not raw ingredient
-const PROCESSED_INDICATORS = [
-  "røget",
-  "varmrøget",
-  "koldrøget",
-  "kold-",
-  "marineret",
-  "marinerede",
-  "pålæg",
-  "pålægssalat",
-  "stegt",
-  "paneret",
-  "panerede",
-  "gravad",
-  "tørret",
-  "dåse",
-  "konserves",
-  "salat", // as in pålægssalat, not grøn salat
-  "postej",
-  "leverpostej",
-  "rullepølse",
-  "spegepølse",
-];
-
-// Indicators that a deal is a raw/fresh/frozen ingredient suitable for cooking
-const RAW_INDICATORS = [
-  "hakket",
-  "filet",
-  "hel ",
-  "hele ",
-  "fersk",
-  "frossen",
-  "frosne",
-  "rå",
-  "udskæring",
-  "strimler",
-  "terninger",
-  "skiver", // can be raw (e.g. okseskank i skiver) or processed
-  "udbenede",
-  "bryst",
-  "overlår",
-  "underlår",
-  "lår",
-  "mørbrad",
-  "nakke",
-  "bov",
-];
-
-/**
- * Score how well a deal matches an ingredient for cooking.
- * Returns 0 (no match) to 100 (perfect match).
- * Handles the "røget rejer vs raw rejer" problem by detecting product form.
- */
-function scoreDealMatch(
-  offer: Offer,
-  ingredient: store.Ingredient,
-  searchTerm: string,
-  preferredStores: Set<string>,
-): number {
-  if (offer.price === null || offer.price <= 0) return 0;
-
-  const heading = offer.heading.toLowerCase();
-  const term = searchTerm.toLowerCase();
-  let score = 50; // base score for a keyword match
-
-  // Store preference bonus
-  if (preferredStores.size > 0) {
-    if (preferredStores.has(offer.store)) {
-      score += 10;
-    } else {
-      score -= 20; // penalize non-preferred stores
-    }
-  }
-
-  // For meat/fish ingredients: penalize processed/deli products
-  if (ingredient.category === "meat" || ingredient.category === "frozen") {
-    const isProcessed = PROCESSED_INDICATORS.some((p) => heading.includes(p));
-    const isRaw = RAW_INDICATORS.some((r) => heading.includes(r));
-
-    if (isProcessed && !isRaw) {
-      // Deal is clearly processed (røget laks, pålæg) — bad match for cooking
-      score -= 60;
-    } else if (isRaw) {
-      // Deal is clearly raw/fresh — good match
-      score += 15;
-    }
-
-    // "eller" bundles: "Rejer, kold- eller varmrøget laks" — the deal bundles
-    // multiple products. If the heading contains the search term AND a processed
-    // indicator, the search term might be the non-processed part of the bundle,
-    // or the processed part. Penalize uncertainty.
-    if (heading.includes(" eller ") && isProcessed) {
-      score -= 30;
-    }
-  }
-
-  // Exact heading match (search term is a substantial part of the heading)
-  if (heading.startsWith(term) || heading === term) {
-    score += 20;
-  } else if (heading.includes(term)) {
-    score += 5;
-  }
-
-  // Price sanity: if price per unit seems unreasonably high for the category,
-  // it might be a premium/specialty product
-  // (We don't penalize here, just don't bonus)
-
-  return Math.max(0, score);
-}
-
-/**
- * Check if a deal is a viable match (score > threshold).
- */
-function isDealViable(score: number): boolean {
-  return score >= 30;
-}
 
 async function scoreAllRecipes(
   preferredStoreNames: Set<string>,
@@ -631,48 +451,18 @@ async function scoreAllRecipes(
       if (pantrySet.has(ing.name.toLowerCase())) continue;
       nonPantryCount++;
 
-      // Find best deal across all search terms for this ingredient
-      // Uses smart matching that understands product form (raw vs processed)
-      let bestOffer: Offer | null = null;
-      let bestScore = 0;
-      for (const term of ing.searchTerms) {
-        const offers = dealMap.get(term) ?? [];
-        for (const offer of offers) {
-          const matchScore = scoreDealMatch(
-            offer,
-            ing,
-            term,
-            preferredStoreNames,
-          );
-          if (!isDealViable(matchScore)) continue;
-          // Prefer higher match score; break ties by lower price
-          if (
-            matchScore > bestScore ||
-            (matchScore === bestScore &&
-              (offer.price ?? 999) < (bestOffer?.price ?? 999))
-          ) {
-            bestOffer = offer;
-            bestScore = matchScore;
-          }
-        }
-      }
+      const bestOffer = findBestDeal(ing, dealMap, preferredStoreNames);
+      const price = bestOffer?.price ?? 0;
 
-      const si: ScoredIngredient = {
+      ingredients.push({
         name: ing.name,
         quantity: ing.quantity,
         category: ing.category,
-        bestDeal: bestOffer
-          ? {
-              heading: bestOffer.heading,
-              price: bestOffer.price!,
-              store: bestOffer.store,
-            }
-          : null,
-        estimatedCost: bestOffer?.price ?? 0,
-      };
-      ingredients.push(si);
+        bestDeal: bestOffer ? { heading: bestOffer.heading, price, store: bestOffer.store } : null,
+        estimatedCost: price,
+      });
       if (bestOffer) {
-        totalCost += bestOffer.price!;
+        totalCost += price;
         withDeals++;
       }
     }
@@ -684,18 +474,14 @@ async function scoreAllRecipes(
       proteinType: recipe.proteinType,
       cuisineType: recipe.cuisineType,
       estimatedCost: totalCost,
-      dealCoverage:
-        nonPantryCount > 0
-          ? Math.round((withDeals / nonPantryCount) * 100)
-          : 100,
+      dealCoverage: nonPantryCount > 0 ? Math.round((withDeals / nonPantryCount) * 100) : 100,
       ingredients,
     });
   }
 
   return scored.sort((a, b) => {
     // Primary: higher deal coverage is better
-    if (b.dealCoverage !== a.dealCoverage)
-      return b.dealCoverage - a.dealCoverage;
+    if (b.dealCoverage !== a.dealCoverage) return b.dealCoverage - a.dealCoverage;
     // Secondary: lower cost is better
     return a.estimatedCost - b.estimatedCost;
   });
@@ -712,53 +498,23 @@ function formatScoredRecipes(scored: ScoredRecipe[]): string {
     lines.push(
       `## ${r.name} — ${r.estimatedCost} DKK (deals on ${r.dealCoverage}% of ingredients)`,
     );
-    lines.push(
-      `   ${r.complexity} | ${r.cuisineType} | ${r.proteinType} | ${r.servings} servings`,
-    );
+    lines.push(`   ${r.complexity} | ${r.cuisineType} | ${r.proteinType} | ${r.servings} servings`);
     if (dealItems.length > 0) {
       lines.push(`   Deals:`);
       for (const i of dealItems) {
+        const deal = i.bestDeal;
+        if (!deal) continue;
         lines.push(
-          `     ${i.name} (${i.quantity}): ${i.bestDeal!.heading} — ${i.bestDeal!.price} DKK @ ${i.bestDeal!.store}`,
+          `     ${i.name} (${i.quantity}): ${deal.heading} — ${deal.price} DKK @ ${deal.store}`,
         );
       }
     }
     if (noDealItems.length > 0) {
-      lines.push(
-        `   No deals: ${noDealItems.map((i) => `${i.name} (${i.quantity})`).join(", ")}`,
-      );
+      lines.push(`   No deals: ${noDealItems.map((i) => `${i.name} (${i.quantity})`).join(", ")}`);
     }
     lines.push("");
   }
   return lines.join("\n");
-}
-
-/**
- * Calculate the total basket cost for a set of recipes,
- * accounting for shared ingredients (buy once, use in multiple recipes).
- */
-function calculateBasketCost(recipes: ScoredRecipe[]): {
-  totalCost: number;
-  uniqueIngredients: number;
-  sharedSavings: number;
-} {
-  const seen = new Map<string, number>(); // ingredient name → price already counted
-  let totalCost = 0;
-  let sharedSavings = 0;
-  for (const recipe of recipes) {
-    for (const ing of recipe.ingredients) {
-      if (!ing.bestDeal) continue;
-      const key = ing.name.toLowerCase();
-      if (seen.has(key)) {
-        // Already buying this ingredient for another recipe
-        sharedSavings += ing.bestDeal.price;
-      } else {
-        seen.set(key, ing.bestDeal.price);
-        totalCost += ing.bestDeal.price;
-      }
-    }
-  }
-  return { totalCost, uniqueIngredients: seen.size, sharedSavings };
 }
 
 server.tool(
@@ -772,32 +528,22 @@ server.tool(
       .describe(
         "If true, also return the cheapest 7-day meal combination considering ingredient overlap and variety",
       ),
-    days: z
-      .number()
-      .optional()
-      .default(7)
-      .describe("Number of days to optimize for (default 7)"),
+    days: z.number().optional().default(7).describe("Number of days to optimize for (default 7)"),
     maxPerProtein: z
       .number()
       .optional()
       .default(2)
-      .describe(
-        "Max times the same protein type can appear in the plan (default 2)",
-      ),
+      .describe("Max times the same protein type can appear in the plan (default 2)"),
     maxPerCuisine: z
       .number()
       .optional()
       .default(2)
-      .describe(
-        "Max times the same cuisine type can appear in the plan (default 2)",
-      ),
+      .describe("Max times the same cuisine type can appear in the plan (default 2)"),
     maxSlowDays: z
       .number()
       .optional()
       .default(2)
-      .describe(
-        "Max number of 'slow' (60min+) recipes in the plan (default 2)",
-      ),
+      .describe("Max number of 'slow' (60min+) recipes in the plan (default 2)"),
   },
   async ({ optimize, days, maxPerProtein, maxPerCuisine, maxSlowDays }) => {
     const household = await store.getHousehold();
@@ -816,13 +562,11 @@ server.tool(
 
       // Generate valid combinations respecting protein variety
       // For small recipe counts, enumerate; for larger, use greedy
-      const bestPlan = findOptimalWeek(
-        scored,
-        days,
+      const bestPlan = findOptimalWeek(scored, days, {
         maxPerProtein,
         maxPerCuisine,
         maxSlowDays,
-      );
+      });
       if (bestPlan) {
         const basket = calculateBasketCost(bestPlan.recipes);
         parts.push(`Total basket: ~${basket.totalCost} DKK for ${days} days`);
@@ -848,113 +592,6 @@ server.tool(
     };
   },
 );
-
-/**
- * Greedy optimizer: pick the cheapest set of `days` recipes
- * while respecting variety constraints on protein, cuisine, and complexity.
- * Falls back to combinatorial search for small recipe sets.
- */
-function findOptimalWeek(
-  scored: ScoredRecipe[],
-  days: number,
-  maxPerProtein: number,
-  maxPerCuisine: number,
-  maxSlowDays: number,
-): { recipes: ScoredRecipe[]; basketCost: number } | null {
-  const n = scored.length;
-
-  // For small sets, try all valid combinations
-  if (n <= 12) {
-    return findOptimalBrute(
-      scored,
-      days,
-      maxPerProtein,
-      maxPerCuisine,
-      maxSlowDays,
-    );
-  }
-
-  // Greedy: sort by cost, pick while respecting constraints
-  const byBasketValue = [...scored].sort(
-    (a, b) => a.estimatedCost - b.estimatedCost,
-  );
-  const picked: ScoredRecipe[] = [];
-  const proteinCount: Record<string, number> = {};
-  const cuisineCount: Record<string, number> = {};
-  let slowCount = 0;
-
-  for (const recipe of byBasketValue) {
-    if (picked.length >= days) break;
-    if ((proteinCount[recipe.proteinType] ?? 0) >= maxPerProtein) continue;
-    if ((cuisineCount[recipe.cuisineType] ?? 0) >= maxPerCuisine) continue;
-    if (recipe.complexity === "slow" && slowCount >= maxSlowDays) continue;
-    picked.push(recipe);
-    proteinCount[recipe.proteinType] =
-      (proteinCount[recipe.proteinType] ?? 0) + 1;
-    cuisineCount[recipe.cuisineType] =
-      (cuisineCount[recipe.cuisineType] ?? 0) + 1;
-    if (recipe.complexity === "slow") slowCount++;
-  }
-
-  if (picked.length < days) return null;
-  const basket = calculateBasketCost(picked);
-  return { recipes: picked, basketCost: basket.totalCost };
-}
-
-function findOptimalBrute(
-  scored: ScoredRecipe[],
-  days: number,
-  maxPerProtein: number,
-  maxPerCuisine: number,
-  maxSlowDays: number,
-): { recipes: ScoredRecipe[]; basketCost: number } | null {
-  let bestCombo: ScoredRecipe[] | null = null;
-  let bestCost = Infinity;
-
-  function isValid(combo: ScoredRecipe[]): boolean {
-    const proteinCount: Record<string, number> = {};
-    const cuisineCount: Record<string, number> = {};
-    let slowCount = 0;
-    for (const r of combo) {
-      proteinCount[r.proteinType] = (proteinCount[r.proteinType] ?? 0) + 1;
-      if (proteinCount[r.proteinType] > maxPerProtein) return false;
-      cuisineCount[r.cuisineType] = (cuisineCount[r.cuisineType] ?? 0) + 1;
-      if (cuisineCount[r.cuisineType] > maxPerCuisine) return false;
-      if (r.complexity === "slow") slowCount++;
-      if (slowCount > maxSlowDays) return false;
-    }
-    return true;
-  }
-
-  // Generate combinations of size `days` from `scored`
-  function* combinations(
-    arr: ScoredRecipe[],
-    k: number,
-    start = 0,
-  ): Generator<ScoredRecipe[]> {
-    if (k === 0) {
-      yield [];
-      return;
-    }
-    for (let i = start; i <= arr.length - k; i++) {
-      for (const rest of combinations(arr, k - 1, i + 1)) {
-        yield [arr[i], ...rest];
-      }
-    }
-  }
-
-  for (const combo of combinations(scored, days)) {
-    if (!isValid(combo)) continue;
-    const basket = calculateBasketCost(combo);
-    if (basket.totalCost < bestCost) {
-      bestCost = basket.totalCost;
-      bestCombo = combo;
-    }
-  }
-
-  if (!bestCombo) return null;
-  return { recipes: bestCombo, basketCost: bestCost };
-}
 
 // ============================================================
 // Meal history tools
@@ -985,11 +622,7 @@ server.tool(
   "get_meal_history",
   "Show recent meal history for rotation planning (what was cooked and when)",
   {
-    weeks: z
-      .number()
-      .optional()
-      .default(4)
-      .describe("How many weeks back to look (default 4)"),
+    weeks: z.number().optional().default(4).describe("How many weeks back to look (default 4)"),
   },
   async ({ weeks }) => {
     const history = await store.getMealHistory(weeks);
@@ -1003,9 +636,7 @@ server.tool(
         ],
       };
     }
-    const lines = history.map(
-      (m) => `- ${m.date}: ${m.recipe} (${m.people.join(", ")})`,
-    );
+    const lines = history.map((m) => `- ${m.date}: ${m.recipe} (${m.people.join(", ")})`);
     return {
       content: [
         {
@@ -1054,11 +685,7 @@ server.tool(
   "get_spend_log",
   "Show grocery spending history for budget tracking",
   {
-    weeks: z
-      .number()
-      .optional()
-      .default(8)
-      .describe("How many weeks back to look (default 8)"),
+    weeks: z.number().optional().default(8).describe("How many weeks back to look (default 8)"),
   },
   async ({ weeks }) => {
     const log = await store.getSpendLog(weeks);
@@ -1183,55 +810,37 @@ server.tool(
     const dealMap = await searchDealsBatch([...allSearchTerms], 8);
 
     for (const [, ing] of allIngredients) {
-      let bestOffer: Offer | null = null;
-      let bestScore = 0;
-
-      for (const term of ing.searchTerms) {
-        const offers = dealMap.get(term) ?? [];
-        for (const offer of offers) {
-          const matchScore = scoreDealMatch(offer, ing, term, preferredStores);
-          if (!isDealViable(matchScore)) continue;
-          if (
-            matchScore > bestScore ||
-            (matchScore === bestScore &&
-              (offer.price ?? 999) < (bestOffer?.price ?? 999))
-          ) {
-            bestOffer = offer;
-            bestScore = matchScore;
-          }
-        }
-      }
+      const bestOffer = findBestDeal(ing, dealMap, preferredStores);
 
       if (bestOffer) {
         const best = bestOffer;
         const storeName = best.store;
-        const line = `${ing.name} (${ing.quantity}): ${best.heading} - ${best.price} ${best.currency}${best.pricePerUnit ? ` (${best.pricePerUnit})` : ""} valid until ${best.validUntil.slice(0, 10)}`;
+        const validTo = best.validUntil?.slice(0, 10) ?? "unknown";
+        const line = `${ing.name} (${ing.quantity}): ${best.heading} - ${best.price} ${best.currency}${best.pricePerUnit ? ` (${best.pricePerUnit})` : ""} valid until ${validTo}`;
         const storeList = byStore.get(storeName) ?? [];
         storeList.push(line);
         byStore.set(storeName, storeList);
       } else {
-        regularPrice.push(
-          `${ing.name} (${ing.quantity}) [${ing.fromRecipes.join(", ")}]`,
-        );
+        regularPrice.push(`${ing.name} (${ing.quantity}) [${ing.fromRecipes.join(", ")}]`);
       }
     }
 
     // Format output grouped by store
     const parts: string[] = [];
-    parts.push(
-      `Shopping list for: ${selectedRecipes.map((r) => r.name).join(", ")}`,
-    );
+    parts.push(`Shopping list for: ${selectedRecipes.map((r) => r.name).join(", ")}`);
     parts.push("");
 
     for (const [storeName, items] of byStore) {
       parts.push(`## ${storeName} (${items.length} items)`);
-      items.forEach((item, i) => parts.push(`${i + 1}. ${item}`));
+      for (let i = 0; i < items.length; i++) {
+        parts.push(`${i + 1}. ${items[i]}`);
+      }
       parts.push("");
     }
 
     if (regularPrice.length > 0) {
       parts.push(`## Buy at regular price (${regularPrice.length} items)`);
-      regularPrice.forEach((u) => parts.push(`- ${u}`));
+      for (const u of regularPrice) parts.push(`- ${u}`);
       parts.push("");
     }
 

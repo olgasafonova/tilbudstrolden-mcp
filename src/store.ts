@@ -1,15 +1,16 @@
 // Unified JSON data store for household, recipes, pantry, history, and spend tracking
 
 import fs from "node:fs/promises";
-import path from "node:path";
 import os from "node:os";
+import path from "node:path";
+import { z } from "zod";
 
 // --- Types ---
 
 export interface Person {
   name: string;
   dietaryRestrictions: string[];
-  defaultSchedule: Record<string, boolean>; // monday..sunday → home or not
+  defaultSchedule: Record<string, boolean>; // monday..sunday -> home or not
 }
 
 export interface StorePreference {
@@ -62,6 +63,74 @@ export interface DataStore {
   spendLog: SpendLogEntry[];
 }
 
+// --- Zod schema for runtime validation on load ---
+
+const DataStoreSchema = z.object({
+  household: z
+    .object({
+      people: z
+        .array(
+          z.object({
+            name: z.string(),
+            dietaryRestrictions: z.array(z.string()).default([]),
+            defaultSchedule: z.record(z.string(), z.boolean()).default({}),
+          }),
+        )
+        .default([]),
+      stores: z
+        .array(
+          z.object({
+            name: z.string(),
+            dealerId: z.string(),
+            priority: z.number(),
+          }),
+        )
+        .default([]),
+      defaultServings: z.number().default(2),
+    })
+    .default({ people: [], stores: [], defaultServings: 2 }),
+  pantry: z.array(z.string()).default([]),
+  recipes: z
+    .array(
+      z.object({
+        name: z.string(),
+        ingredients: z.array(
+          z.object({
+            name: z.string(),
+            quantity: z.string(),
+            searchTerms: z.array(z.string()),
+            category: z.string(),
+          }),
+        ),
+        servings: z.number(),
+        complexity: z.enum(["quick", "medium", "slow"]),
+        cuisineType: z.string(),
+        proteinType: z.string(),
+      }),
+    )
+    .default([]),
+  mealHistory: z
+    .array(
+      z.object({
+        date: z.string(),
+        recipe: z.string(),
+        people: z.array(z.string()),
+      }),
+    )
+    .default([]),
+  spendLog: z
+    .array(
+      z.object({
+        date: z.string(),
+        store: z.string(),
+        estimatedTotal: z.number(),
+        items: z.number(),
+        notes: z.string().default(""),
+      }),
+    )
+    .default([]),
+});
+
 // --- Defaults ---
 
 function emptyStore(): DataStore {
@@ -91,11 +160,11 @@ let lockPromise: Promise<void> = Promise.resolve();
 
 function withLock<T>(fn: () => Promise<T>): Promise<T> {
   const prev = lockPromise;
-  let resolve: () => void;
+  let resolve: (() => void) | undefined;
   lockPromise = new Promise<void>((r) => {
     resolve = r;
   });
-  return prev.then(fn).finally(() => resolve!());
+  return prev.then(fn).finally(() => resolve?.());
 }
 
 async function loadRaw(): Promise<DataStore> {
@@ -103,29 +172,32 @@ async function loadRaw(): Promise<DataStore> {
   try {
     const data = await fs.readFile(filePath, "utf-8");
     const parsed = JSON.parse(data);
-    const defaults = emptyStore();
-    return { ...defaults, ...parsed };
-  } catch {
+    return DataStoreSchema.parse(parsed) as DataStore;
+  } catch (err) {
+    // If file doesn't exist, return empty. If validation fails, log and return empty.
+    if (err instanceof z.ZodError) {
+      console.error("Data file validation failed, starting fresh:", err.issues);
+    }
     return emptyStore();
   }
 }
 
-async function saveRaw(store: DataStore): Promise<void> {
+async function saveRaw(data: DataStore): Promise<void> {
   const filePath = getStorePath();
-  await fs.writeFile(filePath, JSON.stringify(store, null, 2), "utf-8");
+  await fs.writeFile(filePath, JSON.stringify(data, null, 2), "utf-8");
 }
 
 export async function load(): Promise<DataStore> {
   return withLock(() => loadRaw());
 }
 
-export async function save(store: DataStore): Promise<void> {
-  return withLock(() => saveRaw(store));
+export async function save(data: DataStore): Promise<void> {
+  return withLock(() => saveRaw(data));
 }
 
 // Run a read-modify-write operation atomically
 export async function modify(
-  fn: (store: DataStore) => DataStore | Promise<DataStore>,
+  fn: (data: DataStore) => DataStore | Promise<DataStore>,
 ): Promise<DataStore> {
   return withLock(async () => {
     const data = await loadRaw();
@@ -138,13 +210,11 @@ export async function modify(
 // --- Household ---
 
 export async function getHousehold(): Promise<Household> {
-  const store = await load();
-  return store.household;
+  const data = await load();
+  return data.household;
 }
 
-export async function updateHousehold(
-  updates: Partial<Household>,
-): Promise<Household> {
+export async function updateHousehold(updates: Partial<Household>): Promise<Household> {
   const result = await modify((s) => {
     s.household = { ...s.household, ...updates };
     if (updates.people) s.household.people = updates.people;
@@ -157,14 +227,11 @@ export async function updateHousehold(
 // --- Pantry ---
 
 export async function getPantry(): Promise<string[]> {
-  const store = await load();
-  return store.pantry;
+  const data = await load();
+  return data.pantry;
 }
 
-export async function updatePantry(
-  add: string[],
-  remove: string[],
-): Promise<string[]> {
+export async function updatePantry(add: string[], remove: string[]): Promise<string[]> {
   const result = await modify((s) => {
     const removeSet = new Set(remove.map((r) => r.toLowerCase()));
     s.pantry = s.pantry.filter((item) => !removeSet.has(item.toLowerCase()));
@@ -182,15 +249,13 @@ export async function updatePantry(
 // --- Recipes ---
 
 export async function getRecipes(): Promise<Recipe[]> {
-  const store = await load();
-  return store.recipes;
+  const data = await load();
+  return data.recipes;
 }
 
 export async function addRecipe(recipe: Recipe): Promise<void> {
   await modify((s) => {
-    const idx = s.recipes.findIndex(
-      (r) => r.name.toLowerCase() === recipe.name.toLowerCase(),
-    );
+    const idx = s.recipes.findIndex((r) => r.name.toLowerCase() === recipe.name.toLowerCase());
     if (idx >= 0) {
       s.recipes[idx] = recipe;
     } else {
@@ -203,9 +268,7 @@ export async function addRecipe(recipe: Recipe): Promise<void> {
 export async function removeRecipe(name: string): Promise<boolean> {
   let removed = false;
   await modify((s) => {
-    const idx = s.recipes.findIndex(
-      (r) => r.name.toLowerCase() === name.toLowerCase(),
-    );
+    const idx = s.recipes.findIndex((r) => r.name.toLowerCase() === name.toLowerCase());
     if (idx >= 0) {
       s.recipes.splice(idx, 1);
       removed = true;
@@ -218,11 +281,11 @@ export async function removeRecipe(name: string): Promise<boolean> {
 // --- Meal History ---
 
 export async function getMealHistory(weeks = 4): Promise<MealLogEntry[]> {
-  const store = await load();
+  const data = await load();
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - weeks * 7);
   const cutoffStr = cutoff.toISOString().slice(0, 10);
-  return store.mealHistory
+  return data.mealHistory
     .filter((m) => m.date >= cutoffStr)
     .sort((a, b) => b.date.localeCompare(a.date));
 }
@@ -230,9 +293,7 @@ export async function getMealHistory(weeks = 4): Promise<MealLogEntry[]> {
 export async function logMeal(entry: MealLogEntry): Promise<void> {
   await modify((s) => {
     const idx = s.mealHistory.findIndex(
-      (m) =>
-        m.date === entry.date &&
-        m.recipe.toLowerCase() === entry.recipe.toLowerCase(),
+      (m) => m.date === entry.date && m.recipe.toLowerCase() === entry.recipe.toLowerCase(),
     );
     if (idx >= 0) {
       s.mealHistory[idx] = entry;
@@ -246,12 +307,12 @@ export async function logMeal(entry: MealLogEntry): Promise<void> {
 // --- Spend Log ---
 
 export async function getSpendLog(weeks = 8): Promise<SpendLogEntry[]> {
-  const store = await load();
+  const data = await load();
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - weeks * 7);
   const cutoffStr = cutoff.toISOString().slice(0, 10);
-  return store.spendLog
-    .filter((s) => s.date >= cutoffStr)
+  return data.spendLog
+    .filter((e) => e.date >= cutoffStr)
     .sort((a, b) => b.date.localeCompare(a.date));
 }
 

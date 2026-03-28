@@ -1,6 +1,11 @@
 // etilbudsavis.dk / Tjek API client
 
 const BASE_URL = "https://api.etilbudsavis.dk/v2";
+const USER_AGENT = "tilbudstrolden-mcp/0.3.0";
+const FETCH_TIMEOUT_MS = 8000;
+const MAX_RETRIES = 3;
+const RETRY_BASE_MS = 500;
+const MAX_CONCURRENT = 4;
 
 export interface Offer {
   id: string;
@@ -51,19 +56,21 @@ function parseOffer(raw: RawOffer): Offer {
   const unitSymbol = raw.quantity?.unit?.symbol ?? null;
 
   let pricePerUnit: string | null = null;
-  if (price !== null && qty !== null && qty > 0) {
+  if (price !== null && qty !== null && qty > 0 && unitSymbol) {
     if (unitSymbol === "g" && qty < 1000) {
       pricePerUnit = `${((price / qty) * 1000).toFixed(2)} kr/kg`;
     } else if (unitSymbol === "ml" && qty < 1000) {
       pricePerUnit = `${((price / qty) * 1000).toFixed(2)} kr/L`;
-    } else if (
-      unitSymbol === "kg" ||
-      unitSymbol === "l" ||
-      unitSymbol === "L"
-    ) {
+    } else {
       pricePerUnit = `${(price / qty).toFixed(2)} kr/${unitSymbol}`;
-    } else if (unitSymbol) {
-      pricePerUnit = `${(price / qty).toFixed(2)} kr/${unitSymbol}`;
+    }
+  }
+
+  // Pieces-based pricing (e.g. eggs sold per piece)
+  if (price !== null && !pricePerUnit) {
+    const pieces = raw.quantity?.pieces?.from ?? null;
+    if (pieces !== null && pieces > 0) {
+      pricePerUnit = `${(price / pieces).toFixed(2)} kr/pcs`;
     }
   }
 
@@ -86,11 +93,58 @@ function parseOffer(raw: RawOffer): Offer {
 }
 
 async function fetchJson<T>(url: string): Promise<T> {
-  const res = await fetch(url);
-  if (!res.ok) {
-    throw new Error(`API error ${res.status}: ${res.statusText} for ${url}`);
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    try {
+      const res = await fetch(url, {
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+        headers: { "User-Agent": USER_AGENT },
+      });
+
+      if (res.status === 429 || res.status >= 500) {
+        const delay = RETRY_BASE_MS * 2 ** attempt;
+        await new Promise((r) => setTimeout(r, delay));
+        lastError = new Error(`API returned ${res.status}`);
+        continue;
+      }
+
+      if (!res.ok) {
+        throw new Error(`API request failed (${res.status})`);
+      }
+
+      return (await res.json()) as T;
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+      if (attempt < MAX_RETRIES - 1) {
+        const delay = RETRY_BASE_MS * 2 ** attempt;
+        await new Promise((r) => setTimeout(r, delay));
+      }
+    }
   }
-  return res.json() as Promise<T>;
+
+  throw lastError ?? new Error("API request failed after retries");
+}
+
+// Simple concurrency limiter for batch operations
+async function withConcurrencyLimit<T>(tasks: (() => Promise<T>)[], limit: number): Promise<T[]> {
+  const results: T[] = [];
+  const executing: Set<Promise<void>> = new Set();
+
+  for (const task of tasks) {
+    const p = task().then((result) => {
+      results.push(result);
+    });
+    const tracked = p.finally(() => executing.delete(tracked));
+    executing.add(tracked);
+
+    if (executing.size >= limit) {
+      await Promise.race(executing);
+    }
+  }
+
+  await Promise.all(executing);
+  return results;
 }
 
 export async function searchDeals(query: string, limit = 20): Promise<Offer[]> {
@@ -98,16 +152,11 @@ export async function searchDeals(query: string, limit = 20): Promise<Offer[]> {
     query,
     limit: String(limit),
   });
-  const raw = await fetchJson<RawOffer[]>(
-    `${BASE_URL}/offers/search?${params}`,
-  );
+  const raw = await fetchJson<RawOffer[]>(`${BASE_URL}/offers/search?${params}`);
   return raw.map(parseOffer);
 }
 
-export async function getStoreOffers(
-  dealerId: string,
-  limit = 50,
-): Promise<Offer[]> {
+export async function getStoreOffers(dealerId: string, limit = 50): Promise<Offer[]> {
   const params = new URLSearchParams({
     dealer_id: dealerId,
     limit: String(limit),
@@ -117,20 +166,20 @@ export async function getStoreOffers(
 }
 
 /**
- * Search deals for multiple queries in parallel, deduplicating results by offer ID.
- * Returns a map of query → matching offers.
+ * Search deals for multiple queries in parallel (with concurrency limit),
+ * deduplicating queries. Returns a map of query -> matching offers.
  */
 export async function searchDealsBatch(
   queries: string[],
   limit = 5,
 ): Promise<Map<string, Offer[]>> {
   const unique = [...new Set(queries)];
-  const results = await Promise.all(
-    unique.map(async (q) => {
-      const offers = await searchDeals(q, limit);
-      return [q, offers] as const;
-    }),
-  );
+  const tasks = unique.map((q) => async () => {
+    const offers = await searchDeals(q, limit);
+    return [q, offers] as const;
+  });
+
+  const results = await withConcurrencyLimit(tasks, MAX_CONCURRENT);
   return new Map(results);
 }
 
