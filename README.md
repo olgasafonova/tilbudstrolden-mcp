@@ -240,7 +240,7 @@ npm test             # run tests (Vitest)
 
 Deal data from [etilbudsavis.dk](https://etilbudsavis.dk).
 
-Starter recipe ingredient lists adapted from [valdemarsro.dk](https://valdemarsro.dk). Egg fried rice recipe inspired by [Uncle Roger](https://www.youtube.com/@mrnigelng) (Nigel Ng).
+Starter recipe ingredient lists adapted from [valdemarsro.dk](https://valdemarsro.dk).
 
 ## License
 
