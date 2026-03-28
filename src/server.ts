@@ -54,10 +54,10 @@ const server = new McpServer({
 
 server.tool(
   "search_deals",
-  "Search current grocery deals across Danish stores by keyword (e.g. 'kylling', 'mælk', 'oksekød')",
+  "Search grocery deals across Danish stores by keyword",
   {
-    query: z.string().describe("Search term in Danish (e.g. 'hakket oksekød', 'æg', 'smør')"),
-    limit: z.number().optional().default(20).describe("Max results (default 20)"),
+    query: z.string().describe("Danish search term, e.g. 'hakket oksekød'"),
+    limit: z.number().optional().default(20).describe("Max results"),
   },
   async ({ query, limit }) => {
     const offers = await searchDeals(query, limit);
@@ -74,12 +74,12 @@ server.tool(
 
 server.tool(
   "get_store_offers",
-  "List current offers from a specific Danish grocery store",
+  "List current offers from a specific store",
   {
     store: z
       .string()
       .describe(`Store name or dealer ID. Known: ${Object.keys(KNOWN_STORES).join(", ")}`),
-    limit: z.number().optional().default(50).describe("Max results (default 50)"),
+    limit: z.number().optional().default(50).describe("Max results"),
   },
   async ({ store: storeName, limit }) => {
     const dealerId = KNOWN_STORES[storeName.toLowerCase()] ?? storeName;
@@ -98,19 +98,10 @@ server.tool(
 
 server.tool(
   "list_stores",
-  "List Danish grocery store chains with their dealer IDs. Defaults to known grocery stores only.",
+  "List Danish grocery chains with dealer IDs",
   {
-    query: z
-      .string()
-      .optional()
-      .describe("Filter stores by name (case-insensitive substring match)"),
-    all: z
-      .boolean()
-      .optional()
-      .default(false)
-      .describe(
-        "Include ALL stores (electronics, furniture, etc.), not just grocery. Default false.",
-      ),
+    query: z.string().optional().describe("Filter by name"),
+    all: z.boolean().optional().default(false).describe("Include non-grocery stores too"),
   },
   async ({ query, all }) => {
     if (all) {
@@ -159,7 +150,7 @@ server.tool(
 
 server.tool(
   "get_household",
-  "Get household configuration: people (names, dietary restrictions, schedules), preferred stores, and default servings",
+  "Get household config: people, dietary restrictions, preferred stores, servings",
   {},
   async () => {
     const household = await store.getHousehold();
@@ -197,35 +188,31 @@ server.tool(
 
 server.tool(
   "update_household",
-  "Configure household: people with dietary restrictions and weekly schedules, preferred stores, default servings",
+  "Set household members, dietary restrictions, preferred stores, servings",
   {
     people: z
       .array(
         z.object({
-          name: z.string().describe("Person's name"),
-          dietaryRestrictions: z
-            .array(z.string())
-            .describe("Dietary restrictions (e.g. 'no pork', 'lactose-free')"),
+          name: z.string().describe("Name"),
+          dietaryRestrictions: z.array(z.string()).describe("e.g. 'no pork', 'lactose-free'"),
           defaultSchedule: z
             .record(z.string(), z.boolean())
-            .describe(
-              "Days at home: { monday: true, tuesday: true, ... }. Omitted days default to true.",
-            ),
+            .describe("Days at home, e.g. {monday: true}. Omitted = true."),
         }),
       )
       .optional()
-      .describe("Household members"),
+      .describe("People in household"),
     stores: z
       .array(
         z.object({
           name: z.string().describe("Store name"),
-          dealerId: z.string().describe("Store dealer ID from list_stores"),
-          priority: z.number().describe("Priority (1 = closest/default)"),
+          dealerId: z.string().describe("Dealer ID from list_stores"),
+          priority: z.number().describe("1 = closest/default"),
         }),
       )
       .optional()
-      .describe("Preferred stores in priority order"),
-    defaultServings: z.number().optional().describe("Default number of servings"),
+      .describe("Preferred stores"),
+    defaultServings: z.number().optional().describe("Default servings"),
   },
   async ({ people, stores: storePrefs, defaultServings }) => {
     const updates: Partial<store.Household> = {};
@@ -264,7 +251,7 @@ server.tool(
 
 server.tool(
   "update_pantry",
-  "Add or remove items from pantry (items at home that don't need to be bought)",
+  "Add or remove pantry items (excluded from shopping lists)",
   {
     add: z.array(z.string()).optional().default([]).describe("Items to add to pantry"),
     remove: z.array(z.string()).optional().default([]).describe("Items to remove from pantry"),
@@ -282,98 +269,78 @@ server.tool(
   },
 );
 
-server.tool(
-  "get_pantry",
-  "List items currently in pantry (will be excluded from shopping lists)",
-  {},
-  async () => {
-    const pantry = await store.getPantry();
-    return {
-      content: [
-        {
-          type: "text" as const,
-          text:
-            pantry.length > 0
-              ? `Pantry (${pantry.length} items): ${pantry.join(", ")}`
-              : "Pantry is empty.",
-        },
-      ],
-    };
-  },
-);
+server.tool("get_pantry", "List pantry items", {}, async () => {
+  const pantry = await store.getPantry();
+  return {
+    content: [
+      {
+        type: "text" as const,
+        text:
+          pantry.length > 0
+            ? `Pantry (${pantry.length} items): ${pantry.join(", ")}`
+            : "Pantry is empty.",
+      },
+    ],
+  };
+});
 
 // ============================================================
 // Recipe tools
 // ============================================================
 
-server.tool(
-  "get_recipes",
-  "List all saved recipes with ingredients, complexity, cuisine type, and protein type",
-  {},
-  async () => {
-    const recipes = await store.getRecipes();
-    if (recipes.length === 0) {
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: "No recipes saved yet. Use add_recipe to add one.",
-          },
-        ],
-      };
-    }
-    const lines = recipes.map((r) => {
-      const meta = `[${r.complexity}] [${r.cuisineType}] [${r.proteinType}]`;
-      const ingredients = r.ingredients
-        .map(
-          (ing) =>
-            `  - ${ing.name}: ${ing.quantity} [${ing.category}] (search: ${ing.searchTerms.join(", ")})`,
-        )
-        .join("\n");
-      return `## ${r.name} (${r.servings} servings) ${meta}\n${ingredients}`;
-    });
+server.tool("get_recipes", "List saved recipes", {}, async () => {
+  const recipes = await store.getRecipes();
+  if (recipes.length === 0) {
     return {
       content: [
         {
           type: "text" as const,
-          text: `${recipes.length} recipes:\n\n${lines.join("\n\n")}`,
+          text: "No recipes saved yet. Use add_recipe to add one.",
         },
       ],
     };
-  },
-);
+  }
+  const lines = recipes.map((r) => {
+    const meta = `[${r.complexity}] [${r.cuisineType}] [${r.proteinType}]`;
+    const ingredients = r.ingredients
+      .map(
+        (ing) =>
+          `  - ${ing.name}: ${ing.quantity} [${ing.category}] (search: ${ing.searchTerms.join(", ")})`,
+      )
+      .join("\n");
+    return `## ${r.name} (${r.servings} servings) ${meta}\n${ingredients}`;
+  });
+  return {
+    content: [
+      {
+        type: "text" as const,
+        text: `${recipes.length} recipes:\n\n${lines.join("\n\n")}`,
+      },
+    ],
+  };
+});
 
 server.tool(
   "add_recipe",
-  "Add or update a recipe with ingredients, complexity, cuisine type, and protein type for meal planning",
+  "Add or update a recipe for meal planning and deal scoring",
   {
     name: z.string().describe("Recipe name"),
-    servings: z.number().optional().default(4).describe("Number of servings"),
+    servings: z.number().optional().default(4).describe("Servings"),
     complexity: z
       .enum(["quick", "medium", "slow"])
-      .describe("Cooking complexity: quick (<30min), medium (30-60min), slow (60min+)"),
-    cuisineType: z
-      .string()
-      .describe("Cuisine type (e.g. asian, danish, italian, mexican, middle-eastern)"),
-    proteinType: z
-      .string()
-      .describe("Main protein (e.g. chicken, beef, pork, fish, vegetarian, vegan)"),
+      .describe("quick (<30min), medium (30-60min), slow (60min+)"),
+    cuisineType: z.string().describe("e.g. asian, danish, italian, mexican"),
+    proteinType: z.string().describe("e.g. chicken, beef, pork, fish, vegetarian"),
     ingredients: z
       .array(
         z.object({
-          name: z.string().describe("Ingredient name"),
-          quantity: z.string().describe("Amount needed (e.g. '500g', '1L', '2 stk')"),
-          searchTerms: z
-            .array(z.string())
-            .describe(
-              "Danish search terms for matching deals (e.g. ['hakket oksekød', 'oksekød'])",
-            ),
-          category: z
-            .string()
-            .describe("Category: meat, dairy, produce, bakery, frozen, pantry, drinks, other"),
+          name: z.string(),
+          quantity: z.string().describe("e.g. '500g', '1L', '2 stk'"),
+          searchTerms: z.array(z.string()).describe("Danish deal search terms"),
+          category: z.string().describe("meat|dairy|produce|bakery|frozen|pantry|drinks|other"),
         }),
       )
-      .describe("List of ingredients"),
+      .describe("Ingredients"),
   },
   async ({ name, servings, complexity, cuisineType, proteinType, ingredients }) => {
     await store.addRecipe({
@@ -397,9 +364,9 @@ server.tool(
 
 server.tool(
   "remove_recipe",
-  "Remove a saved recipe by name",
+  "Remove a recipe",
   {
-    name: z.string().describe("Recipe name to remove"),
+    name: z.string().describe("Recipe name"),
   },
   async ({ name }) => {
     const removed = await store.removeRecipe(name);
@@ -519,31 +486,13 @@ function formatScoredRecipes(scored: ScoredRecipe[]): string {
 
 server.tool(
   "score_recipes",
-  "Score all saved recipes against current deals. Returns estimated cost per recipe with deal coverage. Optionally optimizes a weekly plan for minimum total basket cost.",
+  "Score recipes against current deals, optionally optimize a weekly meal plan",
   {
-    optimize: z
-      .boolean()
-      .optional()
-      .default(false)
-      .describe(
-        "If true, also return the cheapest 7-day meal combination considering ingredient overlap and variety",
-      ),
-    days: z.number().optional().default(7).describe("Number of days to optimize for (default 7)"),
-    maxPerProtein: z
-      .number()
-      .optional()
-      .default(2)
-      .describe("Max times the same protein type can appear in the plan (default 2)"),
-    maxPerCuisine: z
-      .number()
-      .optional()
-      .default(2)
-      .describe("Max times the same cuisine type can appear in the plan (default 2)"),
-    maxSlowDays: z
-      .number()
-      .optional()
-      .default(2)
-      .describe("Max number of 'slow' (60min+) recipes in the plan (default 2)"),
+    optimize: z.boolean().optional().default(false).describe("Also generate optimal weekly plan"),
+    days: z.number().optional().default(7).describe("Days to plan"),
+    maxPerProtein: z.number().optional().default(2).describe("Max same protein in plan"),
+    maxPerCuisine: z.number().optional().default(2).describe("Max same cuisine in plan"),
+    maxSlowDays: z.number().optional().default(2).describe("Max slow-cook days in plan"),
   },
   async ({ optimize, days, maxPerProtein, maxPerCuisine, maxSlowDays }) => {
     const household = await store.getHousehold();
@@ -599,11 +548,11 @@ server.tool(
 
 server.tool(
   "log_meal",
-  "Record a meal that was cooked (for rotation tracking, so the system avoids repeating recent meals)",
+  "Record a cooked meal for rotation tracking",
   {
-    date: z.string().describe("Date in YYYY-MM-DD format"),
-    recipe: z.string().describe("Recipe name that was cooked"),
-    people: z.array(z.string()).describe("Names of people who ate this meal"),
+    date: z.string().describe("YYYY-MM-DD"),
+    recipe: z.string().describe("Recipe name"),
+    people: z.array(z.string()).describe("Who ate"),
   },
   async ({ date, recipe, people }) => {
     await store.logMeal({ date, recipe, people });
@@ -620,9 +569,9 @@ server.tool(
 
 server.tool(
   "get_meal_history",
-  "Show recent meal history for rotation planning (what was cooked and when)",
+  "Recent meal history for rotation planning",
   {
-    weeks: z.number().optional().default(4).describe("How many weeks back to look (default 4)"),
+    weeks: z.number().optional().default(4).describe("Weeks back"),
   },
   async ({ weeks }) => {
     const history = await store.getMealHistory(weeks);
@@ -654,13 +603,13 @@ server.tool(
 
 server.tool(
   "log_spend",
-  "Record grocery spending for budget tracking",
+  "Record grocery spending",
   {
-    date: z.string().describe("Date in YYYY-MM-DD format"),
-    store: z.string().describe("Store name"),
-    estimatedTotal: z.number().describe("Amount spent in DKK"),
-    items: z.number().describe("Number of items bought"),
-    notes: z.string().optional().default("").describe("Optional notes"),
+    date: z.string().describe("YYYY-MM-DD"),
+    store: z.string(),
+    estimatedTotal: z.number().describe("DKK spent"),
+    items: z.number().describe("Items bought"),
+    notes: z.string().optional().default(""),
   },
   async ({ date, store: storeName, estimatedTotal, items, notes }) => {
     await store.logSpend({
@@ -683,9 +632,9 @@ server.tool(
 
 server.tool(
   "get_spend_log",
-  "Show grocery spending history for budget tracking",
+  "Spending history with totals",
   {
-    weeks: z.number().optional().default(8).describe("How many weeks back to look (default 8)"),
+    weeks: z.number().optional().default(8).describe("Weeks back"),
   },
   async ({ weeks }) => {
     const log = await store.getSpendLog(weeks);
@@ -722,14 +671,10 @@ server.tool(
 
 server.tool(
   "generate_shopping_list",
-  "Generate a deal-optimized shopping list from selected recipes. Excludes pantry items, respects dietary restrictions, and groups by store.",
+  "Deal-optimized shopping list from recipes, grouped by store",
   {
-    recipes: z.array(z.string()).describe("Recipe names to shop for"),
-    excludePantry: z
-      .boolean()
-      .optional()
-      .default(true)
-      .describe("Skip ingredients found in pantry (default true)"),
+    recipes: z.array(z.string()).describe("Recipe names"),
+    excludePantry: z.boolean().optional().default(true).describe("Skip pantry items"),
   },
   async ({ recipes: recipeNames, excludePantry }) => {
     const allRecipes = await store.getRecipes();
