@@ -1,6 +1,6 @@
-# smart-shopper-mcp
+# tilbudstrolden-mcp
 
-MCP server for Danish grocery deal hunting. Searches current offers from Netto, Meny, Lidl, Rema 1000, Fotex, Bilka, Aldi, and Spar via the etilbudsavis.dk API.
+TilbudsTrolden ("the deal troll") is an MCP server for Danish grocery deal hunting. It searches current offers from Netto, Meny, Lidl, Rema 1000, Fotex, Bilka, Aldi, and Spar via the etilbudsavis.dk API.
 
 ## What it does
 
@@ -27,9 +27,9 @@ Add to your Claude Desktop config:
 ```json
 {
   "mcpServers": {
-    "smart-shopper": {
+    "tilbudstrolden": {
       "command": "node",
-      "args": ["/path/to/smart-shopper-mcp/dist/server.js"]
+      "args": ["/path/to/tilbudstrolden-mcp/dist/server.js"]
     }
   }
 }
@@ -38,7 +38,7 @@ Add to your Claude Desktop config:
 ### Claude Code
 
 ```bash
-claude mcp add smart-shopper node /path/to/smart-shopper-mcp/dist/server.js
+claude mcp add tilbudstrolden node /path/to/tilbudstrolden-mcp/dist/server.js
 ```
 
 ## Tools
@@ -67,7 +67,7 @@ claude mcp add smart-shopper node /path/to/smart-shopper-mcp/dist/server.js
 
 ## Data storage
 
-All data (household, recipes, pantry, meal history, spending) is stored in `~/.smart-shopper.json`. Override with the `SMART_SHOPPER_DATA` environment variable.
+All data (household, recipes, pantry, meal history, spending) is stored in `~/.tilbudstrolden.json`. Override with the `TILBUDSTROLDEN_DATA` environment variable.
 
 ## Deal matching
 

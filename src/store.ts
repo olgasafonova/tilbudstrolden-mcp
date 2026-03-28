@@ -81,9 +81,9 @@ function emptyStore(): DataStore {
 // --- File I/O with mutex ---
 
 function getStorePath(): string {
-  const custom = process.env.SMART_SHOPPER_DATA;
+  const custom = process.env.TILBUDSTROLDEN_DATA;
   if (custom) return custom;
-  return path.join(os.homedir(), ".smart-shopper.json");
+  return path.join(os.homedir(), ".tilbudstrolden.json");
 }
 
 // Simple async mutex to prevent concurrent read-modify-write corruption

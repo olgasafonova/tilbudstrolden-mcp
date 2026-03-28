@@ -1,4 +1,4 @@
-# smart-shopper-mcp
+# tilbudstrolden-mcp
 
 TypeScript MCP server for Danish grocery deal hunting via etilbudsavis.dk API.
 
@@ -21,7 +21,7 @@ Base URL: `https://api.etilbudsavis.dk/v2`. No auth required. Endpoints used:
 
 ## Data file
 
-`~/.smart-shopper.json` (override: `SMART_SHOPPER_DATA` env var). Contains household config, pantry, recipes, meal history, spend log. All writes use an async mutex to prevent corruption.
+`~/.tilbudstrolden.json` (override: `TILBUDSTROLDEN_DATA` env var). Contains household config, pantry, recipes, meal history, spend log. All writes use an async mutex to prevent corruption.
 
 ## Build
 

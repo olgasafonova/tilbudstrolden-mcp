@@ -41,7 +41,7 @@ function formatOfferList(offers: Offer[]): string {
 }
 
 const server = new McpServer({
-  name: "smart-shopper",
+  name: "tilbudstrolden",
   version: "0.3.0",
 });
 
@@ -1207,7 +1207,7 @@ server.tool(
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error("Smart Shopper MCP server v0.3.0 running on stdio");
+  console.error("TilbudsTrolden MCP server v0.3.0 running on stdio");
 }
 
 main().catch((err) => {

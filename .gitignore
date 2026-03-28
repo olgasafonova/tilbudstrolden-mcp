@@ -3,3 +3,4 @@ dist/
 *.js.map
 .smart-shopper-recipes.json
 .smart-shopper.json
+.tilbudstrolden.json
