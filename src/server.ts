@@ -7,6 +7,7 @@ import { getStoreOffers, listStores, searchDeals, searchDealsBatch } from "./api
 import {
   calculateBasketCost,
   computeIngredientCost,
+  computeShoppingCost,
   type DealCandidate,
   findBestDeal,
   findOptimalWeek,
@@ -805,6 +806,7 @@ server.tool(
           category: string;
           quantity: string;
           fromRecipes: string[];
+          recipeServings: number;
         }
       >();
 
@@ -819,6 +821,7 @@ server.tool(
             allIngredients.set(key, {
               ...ing,
               fromRecipes: [recipe.name],
+              recipeServings: recipe.servings,
             });
           }
         }
@@ -854,6 +857,8 @@ server.tool(
       const dealMap = await searchDealsBatch([...allSearchTerms], 8);
 
       const uncertainItems: string[] = [];
+      const householdSize = household.people.length || household.defaultServings;
+      let grandTotal = 0;
 
       for (const [, ing] of allIngredients) {
         const result = findBestDeal(ing, dealMap, preferredStores);
@@ -863,7 +868,31 @@ server.tool(
           const storeName = best.store;
           const validTo = best.validUntil?.slice(0, 10) ?? "unknown";
           const conf = result.confidence === "low" ? " ⚠" : "";
-          const line = `${ing.name} (${ing.quantity}): ${best.heading} - ${best.price} ${best.currency}${best.pricePerUnit ? ` (${best.pricePerUnit})` : ""} valid until ${validTo}${conf}`;
+
+          // Compute pack-aware cost
+          const shopping = computeShoppingCost(
+            best,
+            ing.quantity,
+            ing.recipeServings,
+            householdSize,
+          );
+
+          let line: string;
+          if (shopping) {
+            const packInfo =
+              shopping.packsNeeded > 1
+                ? `${shopping.packsNeeded} × ${shopping.pricePerPack} DKK`
+                : `${shopping.pricePerPack} DKK`;
+            const leftoverInfo =
+              shopping.leftover > 0 ? ` (${shopping.leftover}${shopping.unitNeeded} leftover)` : "";
+            line = `${ing.name}: need ${shopping.quantityNeeded}${shopping.unitNeeded} → ${packInfo} = ${shopping.totalCost} DKK [${shopping.packSize}${shopping.unitNeeded}/pack${shopping.unitPrice ? `, ${shopping.unitPrice}` : ""}]${leftoverInfo} — ${best.heading} @ ${storeName} until ${validTo}${conf}`;
+            grandTotal += shopping.totalCost;
+          } else {
+            // Can't compute packs, show sticker price
+            line = `${ing.name} (${ing.quantity}): ${best.heading} - ${best.price} ${best.currency}${best.pricePerUnit ? ` (${best.pricePerUnit})` : ""} @ ${storeName} until ${validTo}${conf}`;
+            grandTotal += best.price ?? 0;
+          }
+
           const storeList = byStore.get(storeName) ?? [];
           storeList.push(line);
           byStore.set(storeName, storeList);
@@ -882,7 +911,10 @@ server.tool(
 
       // Format output grouped by store
       const parts: string[] = [];
-      parts.push(`Shopping list for: ${selectedRecipes.map((r) => r.name).join(", ")}`);
+      parts.push(
+        `Shopping list for: ${selectedRecipes.map((r) => r.name).join(", ")} (${householdSize} people)`,
+      );
+      parts.push(`Estimated register total (deals only): ~${Math.round(grandTotal)} DKK`);
       parts.push("");
 
       for (const [storeName, items] of byStore) {

@@ -85,6 +85,72 @@ export function computeIngredientCost(
   return Math.round(unitPrice * scaledAmount * 100) / 100;
 }
 
+// --- Shopping cost (whole packs) ---
+
+export interface ShoppingCost {
+  /** Quantity needed scaled for household */
+  quantityNeeded: number;
+  /** Normalized unit ("g", "ml", "stk") */
+  unitNeeded: string;
+  /** How much one pack contains (in base units) */
+  packSize: number;
+  /** Whole packs you must buy */
+  packsNeeded: number;
+  /** Sticker price per pack */
+  pricePerPack: number;
+  /** Total at the register: packsNeeded × pricePerPack */
+  totalCost: number;
+  /** Leftover quantity after cooking */
+  leftover: number;
+  /** Formatted unit price string from offer */
+  unitPrice: string | null;
+}
+
+/**
+ * Compute how many whole packs to buy and the real register cost.
+ * Returns null when units can't be compared (fall back to sticker price).
+ */
+export function computeShoppingCost(
+  offer: Offer,
+  recipeQty: string,
+  recipeServings: number,
+  householdSize: number,
+): ShoppingCost | null {
+  const price = offer.price;
+  if (price === null || price <= 0) return null;
+
+  const servingScale = recipeServings > 0 ? householdSize / recipeServings : 1;
+
+  const parsed = parseQuantity(recipeQty);
+  if (!parsed) return null;
+
+  const offerQty = offer.quantity;
+  const offerUnit = offer.unit?.toLowerCase() ?? null;
+  if (offerQty === null || offerQty <= 0 || !offerUnit) return null;
+
+  const offerConversion = UNIT_CONVERSIONS[offerUnit];
+  if (!offerConversion) return null;
+
+  const packSize = offerQty * offerConversion.factor;
+  if (offerConversion.base !== parsed.unit) return null;
+
+  const quantityNeeded = parsed.amount * servingScale;
+  const packsNeeded = Math.ceil(quantityNeeded / packSize);
+  const totalCost = packsNeeded * price;
+  const leftover = packsNeeded * packSize - quantityNeeded;
+
+  return {
+    quantityNeeded: Math.round(quantityNeeded),
+    unitNeeded: parsed.unit,
+    packSize: Math.round(packSize),
+    packsNeeded,
+    pricePerPack: price,
+    totalCost,
+    leftover: Math.round(leftover),
+    unitPrice: offer.pricePerUnit,
+  };
+}
+
 // --- Types ---
 
 export interface DealCandidate {

@@ -3,6 +3,7 @@ import type { Offer } from "./api.js";
 import {
   calculateBasketCost,
   computeIngredientCost,
+  computeShoppingCost,
   findBestDeal,
   findOptimalWeek,
   isModifierPosition,
@@ -173,6 +174,62 @@ describe("computeIngredientCost", () => {
   it("returns 0 for zero price", () => {
     const offer = makeOffer({ price: 0 });
     expect(computeIngredientCost(offer, "500 g", 4, 4)).toBe(0);
+  });
+});
+
+// --- computeShoppingCost ---
+
+describe("computeShoppingCost", () => {
+  it("computes 1 pack when quantity fits", () => {
+    // Need 375g (500g × 3/4), pack is 400g
+    const offer = makeOffer({ price: 45, quantity: 400, unit: "g" });
+    const result = computeShoppingCost(offer, "500 g", 4, 3);
+    expect(result).not.toBeNull();
+    expect(result?.quantityNeeded).toBe(375);
+    expect(result?.packsNeeded).toBe(1);
+    expect(result?.totalCost).toBe(45);
+    expect(result?.leftover).toBe(25);
+  });
+
+  it("computes 2 packs when quantity exceeds 1 pack", () => {
+    // Need 625g (500g × 5/4), pack is 400g → need 2
+    const offer = makeOffer({ price: 45, quantity: 400, unit: "g" });
+    const result = computeShoppingCost(offer, "500 g", 4, 5);
+    expect(result).not.toBeNull();
+    expect(result?.packsNeeded).toBe(2);
+    expect(result?.totalCost).toBe(90);
+    expect(result?.leftover).toBe(175);
+  });
+
+  it("handles kg recipe vs g offer", () => {
+    // Need 750g (1kg × 3/4), pack is 400g → need 2
+    const offer = makeOffer({ price: 45, quantity: 400, unit: "g" });
+    const result = computeShoppingCost(offer, "1 kg", 4, 3);
+    expect(result).not.toBeNull();
+    expect(result?.quantityNeeded).toBe(750);
+    expect(result?.packsNeeded).toBe(2);
+    expect(result?.totalCost).toBe(90);
+  });
+
+  it("handles dl recipe vs ml offer", () => {
+    // Need 150ml (2dl × 3/4), pack is 1000ml → 1 pack
+    const offer = makeOffer({ price: 20, quantity: 1000, unit: "ml" });
+    const result = computeShoppingCost(offer, "2 dl", 4, 3);
+    expect(result).not.toBeNull();
+    expect(result?.quantityNeeded).toBe(150);
+    expect(result?.packsNeeded).toBe(1);
+    expect(result?.totalCost).toBe(20);
+    expect(result?.leftover).toBe(850);
+  });
+
+  it("returns null for unparseable quantities", () => {
+    const offer = makeOffer({ price: 25 });
+    expect(computeShoppingCost(offer, "3 fed", 4, 3)).toBeNull();
+  });
+
+  it("returns null for incompatible units", () => {
+    const offer = makeOffer({ price: 20, quantity: 500, unit: "ml" });
+    expect(computeShoppingCost(offer, "500 g", 4, 3)).toBeNull();
   });
 });
 
