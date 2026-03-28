@@ -4,6 +4,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { z } from "zod";
+import { defaultRecipes } from "./default-recipes.js";
 
 // --- Types ---
 
@@ -250,6 +251,16 @@ export async function updatePantry(add: string[], remove: string[]): Promise<str
 
 export async function getRecipes(): Promise<Recipe[]> {
   const data = await load();
+  if (data.recipes.length === 0) {
+    // Seed default recipes on first use, then return them
+    const seeded = await modify((s) => {
+      if (s.recipes.length === 0) {
+        s.recipes = [...defaultRecipes];
+      }
+      return s;
+    });
+    return seeded.recipes;
+  }
   return data.recipes;
 }
 
