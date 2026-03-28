@@ -1,3 +1,4 @@
+import { createRequire } from "node:module";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
@@ -11,6 +12,19 @@ import {
   type ScoredRecipe,
 } from "./scoring.js";
 import * as store from "./store.js";
+
+const require = createRequire(import.meta.url);
+const { version: SERVER_VERSION } = require("../package.json") as {
+  version: string;
+};
+
+/** Return a structured MCP error result instead of throwing */
+function errorResult(message: string) {
+  return {
+    content: [{ type: "text" as const, text: message }],
+    isError: true as const,
+  };
+}
 
 const KNOWN_STORES: Record<string, string> = {
   netto: "9ba51",
@@ -45,7 +59,7 @@ function formatOfferList(offers: Offer[]): string {
 
 const server = new McpServer({
   name: "tilbudstrolden",
-  version: "0.3.0",
+  version: SERVER_VERSION,
 });
 
 // ============================================================
@@ -60,15 +74,19 @@ server.tool(
     limit: z.number().optional().default(20).describe("Max results"),
   },
   async ({ query, limit }) => {
-    const offers = await searchDeals(query, limit);
-    return {
-      content: [
-        {
-          type: "text" as const,
-          text: `Found ${offers.length} deals for "${query}":\n\n${formatOfferList(offers)}`,
-        },
-      ],
-    };
+    try {
+      const offers = await searchDeals(query.trim(), limit);
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `Found ${offers.length} deals for "${query}":\n\n${formatOfferList(offers)}`,
+          },
+        ],
+      };
+    } catch (err) {
+      return errorResult(`Failed to search deals: ${err instanceof Error ? err.message : err}`);
+    }
   },
 );
 
@@ -82,17 +100,21 @@ server.tool(
     limit: z.number().optional().default(50).describe("Max results"),
   },
   async ({ store: storeName, limit }) => {
-    const dealerId = KNOWN_STORES[storeName.toLowerCase()] ?? storeName;
-    const offers = await getStoreOffers(dealerId, limit);
-    const name = offers[0]?.store ?? storeName;
-    return {
-      content: [
-        {
-          type: "text" as const,
-          text: `${offers.length} current offers at ${name}:\n\n${formatOfferList(offers)}`,
-        },
-      ],
-    };
+    try {
+      const dealerId = KNOWN_STORES[storeName.trim().toLowerCase()] ?? storeName.trim();
+      const offers = await getStoreOffers(dealerId, limit);
+      const name = offers[0]?.store ?? storeName;
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `${offers.length} current offers at ${name}:\n\n${formatOfferList(offers)}`,
+          },
+        ],
+      };
+    } catch (err) {
+      return errorResult(`Failed to get store offers: ${err instanceof Error ? err.message : err}`);
+    }
   },
 );
 
@@ -104,43 +126,47 @@ server.tool(
     all: z.boolean().optional().default(false).describe("Include non-grocery stores too"),
   },
   async ({ query, all }) => {
-    if (all) {
-      const stores = await listStores();
-      let filtered = stores.sort((a, b) => a.name.localeCompare(b.name));
+    try {
+      if (all) {
+        const stores = await listStores();
+        let filtered = stores.sort((a, b) => a.name.localeCompare(b.name));
+        if (query) {
+          const q = query.toLowerCase();
+          filtered = filtered.filter((s) => s.name.toLowerCase().includes(q));
+        }
+        const lines = filtered.map(
+          (s) => `- ${s.name} (id: ${s.id})${s.website ? ` ${s.website}` : ""}`,
+        );
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `${filtered.length} stores:\n\n${lines.join("\n")}`,
+            },
+          ],
+        };
+      }
+
+      // Default: known grocery stores only
+      let entries = Object.entries(KNOWN_STORES).filter(
+        ([key]) => !["rema", "rema1000", "foetex"].includes(key), // skip aliases
+      );
       if (query) {
         const q = query.toLowerCase();
-        filtered = filtered.filter((s) => s.name.toLowerCase().includes(q));
+        entries = entries.filter(([key]) => key.includes(q));
       }
-      const lines = filtered.map(
-        (s) => `- ${s.name} (id: ${s.id})${s.website ? ` ${s.website}` : ""}`,
-      );
+      const lines = entries.map(([name, id]) => `- ${name} (id: ${id})`);
       return {
         content: [
           {
             type: "text" as const,
-            text: `${filtered.length} stores:\n\n${lines.join("\n")}`,
+            text: `${lines.length} grocery stores:\n\n${lines.join("\n")}`,
           },
         ],
       };
+    } catch (err) {
+      return errorResult(`Failed to list stores: ${err instanceof Error ? err.message : err}`);
     }
-
-    // Default: known grocery stores only
-    let entries = Object.entries(KNOWN_STORES).filter(
-      ([key]) => !["rema", "rema1000", "foetex"].includes(key), // skip aliases
-    );
-    if (query) {
-      const q = query.toLowerCase();
-      entries = entries.filter(([key]) => key.includes(q));
-    }
-    const lines = entries.map(([name, id]) => `- ${name} (id: ${id})`);
-    return {
-      content: [
-        {
-          type: "text" as const,
-          text: `${lines.length} grocery stores:\n\n${lines.join("\n")}`,
-        },
-      ],
-    };
   },
 );
 
@@ -495,50 +521,54 @@ server.tool(
     maxSlowDays: z.number().optional().default(2).describe("Max slow-cook days in plan"),
   },
   async ({ optimize, days, maxPerProtein, maxPerCuisine, maxSlowDays }) => {
-    const household = await store.getHousehold();
-    const pantry = await store.getPantry();
-    const pantrySet = new Set(pantry.map((p) => p.toLowerCase()));
-    const preferredStores = new Set(household.stores.map((s) => s.name));
+    try {
+      const household = await store.getHousehold();
+      const pantry = await store.getPantry();
+      const pantrySet = new Set(pantry.map((p) => p.toLowerCase()));
+      const preferredStores = new Set(household.stores.map((s) => s.name));
 
-    const scored = await scoreAllRecipes(preferredStores, pantrySet);
-    const parts: string[] = [];
+      const scored = await scoreAllRecipes(preferredStores, pantrySet);
+      const parts: string[] = [];
 
-    parts.push(`# Recipe scores (${scored.length} recipes)\n`);
-    parts.push(formatScoredRecipes(scored));
+      parts.push(`# Recipe scores (${scored.length} recipes)\n`);
+      parts.push(formatScoredRecipes(scored));
 
-    if (optimize && scored.length >= days) {
-      parts.push(`\n# Optimized ${days}-day plan\n`);
+      if (optimize && scored.length >= days) {
+        parts.push(`\n# Optimized ${days}-day plan\n`);
 
-      // Generate valid combinations respecting protein variety
-      // For small recipe counts, enumerate; for larger, use greedy
-      const bestPlan = findOptimalWeek(scored, days, {
-        maxPerProtein,
-        maxPerCuisine,
-        maxSlowDays,
-      });
-      if (bestPlan) {
-        const basket = calculateBasketCost(bestPlan.recipes);
-        parts.push(`Total basket: ~${basket.totalCost} DKK for ${days} days`);
-        if (basket.sharedSavings > 0) {
-          parts.push(`Shared ingredient savings: ~${basket.sharedSavings} DKK`);
-        }
-        parts.push(`Unique items to buy: ${basket.uniqueIngredients}\n`);
-        for (let i = 0; i < bestPlan.recipes.length; i++) {
-          const r = bestPlan.recipes[i];
+        // Generate valid combinations respecting protein variety
+        // For small recipe counts, enumerate; for larger, use greedy
+        const bestPlan = findOptimalWeek(scored, days, {
+          maxPerProtein,
+          maxPerCuisine,
+          maxSlowDays,
+        });
+        if (bestPlan) {
+          const basket = calculateBasketCost(bestPlan.recipes);
+          parts.push(`Total basket: ~${basket.totalCost} DKK for ${days} days`);
+          if (basket.sharedSavings > 0) {
+            parts.push(`Shared ingredient savings: ~${basket.sharedSavings} DKK`);
+          }
+          parts.push(`Unique items to buy: ${basket.uniqueIngredients}\n`);
+          for (let i = 0; i < bestPlan.recipes.length; i++) {
+            const r = bestPlan.recipes[i];
+            parts.push(
+              `Day ${i + 1}: ${r.name} (~${r.estimatedCost} DKK) [${r.proteinType}, ${r.cuisineType}, ${r.complexity}]`,
+            );
+          }
+        } else {
           parts.push(
-            `Day ${i + 1}: ${r.name} (~${r.estimatedCost} DKK) [${r.proteinType}, ${r.cuisineType}, ${r.complexity}]`,
+            "Could not find a valid combination with the variety constraints. Try relaxing maxPerProtein, maxPerCuisine, or maxSlowDays.",
           );
         }
-      } else {
-        parts.push(
-          "Could not find a valid combination with the variety constraints. Try relaxing maxPerProtein, maxPerCuisine, or maxSlowDays.",
-        );
       }
-    }
 
-    return {
-      content: [{ type: "text" as const, text: parts.join("\n") }],
-    };
+      return {
+        content: [{ type: "text" as const, text: parts.join("\n") }],
+      };
+    } catch (err) {
+      return errorResult(`Failed to score recipes: ${err instanceof Error ? err.message : err}`);
+    }
   },
 );
 
@@ -677,125 +707,131 @@ server.tool(
     excludePantry: z.boolean().optional().default(true).describe("Skip pantry items"),
   },
   async ({ recipes: recipeNames, excludePantry }) => {
-    const allRecipes = await store.getRecipes();
-    const pantry = excludePantry ? await store.getPantry() : [];
-    const pantrySet = new Set(pantry.map((p) => p.toLowerCase()));
+    try {
+      const allRecipes = await store.getRecipes();
+      const pantry = excludePantry ? await store.getPantry() : [];
+      const pantrySet = new Set(pantry.map((p) => p.toLowerCase()));
 
-    const selectedRecipes = allRecipes.filter((r) =>
-      recipeNames.some((n) => r.name.toLowerCase() === n.toLowerCase()),
-    );
+      const selectedRecipes = allRecipes.filter((r) =>
+        recipeNames.some((n) => r.name.toLowerCase() === n.toLowerCase()),
+      );
 
-    if (selectedRecipes.length === 0) {
-      const available = allRecipes.map((r) => r.name).join(", ");
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: `No matching recipes found. Available: ${available || "none (add recipes first)"}`,
-          },
-        ],
-      };
-    }
-
-    // Collect unique ingredients, skip pantry items
-    const allIngredients = new Map<
-      string,
-      {
-        name: string;
-        searchTerms: string[];
-        category: string;
-        quantity: string;
-        fromRecipes: string[];
+      if (selectedRecipes.length === 0) {
+        const available = allRecipes.map((r) => r.name).join(", ");
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `No matching recipes found. Available: ${available || "none (add recipes first)"}`,
+            },
+          ],
+        };
       }
-    >();
 
-    for (const recipe of selectedRecipes) {
-      for (const ing of recipe.ingredients) {
-        const key = ing.name.toLowerCase();
-        if (pantrySet.has(key)) continue;
-        const existing = allIngredients.get(key);
-        if (existing) {
-          existing.fromRecipes.push(recipe.name);
-        } else {
-          allIngredients.set(key, {
-            ...ing,
-            fromRecipes: [recipe.name],
-          });
+      // Collect unique ingredients, skip pantry items
+      const allIngredients = new Map<
+        string,
+        {
+          name: string;
+          searchTerms: string[];
+          category: string;
+          quantity: string;
+          fromRecipes: string[];
+        }
+      >();
+
+      for (const recipe of selectedRecipes) {
+        for (const ing of recipe.ingredients) {
+          const key = ing.name.toLowerCase();
+          if (pantrySet.has(key)) continue;
+          const existing = allIngredients.get(key);
+          if (existing) {
+            existing.fromRecipes.push(recipe.name);
+          } else {
+            allIngredients.set(key, {
+              ...ing,
+              fromRecipes: [recipe.name],
+            });
+          }
         }
       }
-    }
 
-    if (allIngredients.size === 0) {
+      if (allIngredients.size === 0) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: "All ingredients are in your pantry. Nothing to buy!",
+            },
+          ],
+        };
+      }
+
+      // Search for deals per ingredient using smart matching
+      const household = await store.getHousehold();
+      const preferredStores = new Set(household.stores.map((s) => s.name));
+      const byStore = new Map<string, string[]>();
+      const regularPrice: string[] = [];
+      const skippedPantry = pantry.filter((p) =>
+        selectedRecipes.some((r) =>
+          r.ingredients.some((i) => i.name.toLowerCase() === p.toLowerCase()),
+        ),
+      );
+
+      // Batch fetch all deals in parallel
+      const allSearchTerms = new Set<string>();
+      for (const [, ing] of allIngredients) {
+        for (const term of ing.searchTerms) allSearchTerms.add(term);
+      }
+      const dealMap = await searchDealsBatch([...allSearchTerms], 8);
+
+      for (const [, ing] of allIngredients) {
+        const bestOffer = findBestDeal(ing, dealMap, preferredStores);
+
+        if (bestOffer) {
+          const best = bestOffer;
+          const storeName = best.store;
+          const validTo = best.validUntil?.slice(0, 10) ?? "unknown";
+          const line = `${ing.name} (${ing.quantity}): ${best.heading} - ${best.price} ${best.currency}${best.pricePerUnit ? ` (${best.pricePerUnit})` : ""} valid until ${validTo}`;
+          const storeList = byStore.get(storeName) ?? [];
+          storeList.push(line);
+          byStore.set(storeName, storeList);
+        } else {
+          regularPrice.push(`${ing.name} (${ing.quantity}) [${ing.fromRecipes.join(", ")}]`);
+        }
+      }
+
+      // Format output grouped by store
+      const parts: string[] = [];
+      parts.push(`Shopping list for: ${selectedRecipes.map((r) => r.name).join(", ")}`);
+      parts.push("");
+
+      for (const [storeName, items] of byStore) {
+        parts.push(`## ${storeName} (${items.length} items)`);
+        for (let i = 0; i < items.length; i++) {
+          parts.push(`${i + 1}. ${items[i]}`);
+        }
+        parts.push("");
+      }
+
+      if (regularPrice.length > 0) {
+        parts.push(`## Buy at regular price (${regularPrice.length} items)`);
+        for (const u of regularPrice) parts.push(`- ${u}`);
+        parts.push("");
+      }
+
+      if (skippedPantry.length > 0) {
+        parts.push(`## Skipped (in pantry): ${skippedPantry.join(", ")}`);
+      }
+
       return {
-        content: [
-          {
-            type: "text" as const,
-            text: "All ingredients are in your pantry. Nothing to buy!",
-          },
-        ],
+        content: [{ type: "text" as const, text: parts.join("\n") }],
       };
+    } catch (err) {
+      return errorResult(
+        `Failed to generate shopping list: ${err instanceof Error ? err.message : err}`,
+      );
     }
-
-    // Search for deals per ingredient using smart matching
-    const household = await store.getHousehold();
-    const preferredStores = new Set(household.stores.map((s) => s.name));
-    const byStore = new Map<string, string[]>();
-    const regularPrice: string[] = [];
-    const skippedPantry = pantry.filter((p) =>
-      selectedRecipes.some((r) =>
-        r.ingredients.some((i) => i.name.toLowerCase() === p.toLowerCase()),
-      ),
-    );
-
-    // Batch fetch all deals in parallel
-    const allSearchTerms = new Set<string>();
-    for (const [, ing] of allIngredients) {
-      for (const term of ing.searchTerms) allSearchTerms.add(term);
-    }
-    const dealMap = await searchDealsBatch([...allSearchTerms], 8);
-
-    for (const [, ing] of allIngredients) {
-      const bestOffer = findBestDeal(ing, dealMap, preferredStores);
-
-      if (bestOffer) {
-        const best = bestOffer;
-        const storeName = best.store;
-        const validTo = best.validUntil?.slice(0, 10) ?? "unknown";
-        const line = `${ing.name} (${ing.quantity}): ${best.heading} - ${best.price} ${best.currency}${best.pricePerUnit ? ` (${best.pricePerUnit})` : ""} valid until ${validTo}`;
-        const storeList = byStore.get(storeName) ?? [];
-        storeList.push(line);
-        byStore.set(storeName, storeList);
-      } else {
-        regularPrice.push(`${ing.name} (${ing.quantity}) [${ing.fromRecipes.join(", ")}]`);
-      }
-    }
-
-    // Format output grouped by store
-    const parts: string[] = [];
-    parts.push(`Shopping list for: ${selectedRecipes.map((r) => r.name).join(", ")}`);
-    parts.push("");
-
-    for (const [storeName, items] of byStore) {
-      parts.push(`## ${storeName} (${items.length} items)`);
-      for (let i = 0; i < items.length; i++) {
-        parts.push(`${i + 1}. ${items[i]}`);
-      }
-      parts.push("");
-    }
-
-    if (regularPrice.length > 0) {
-      parts.push(`## Buy at regular price (${regularPrice.length} items)`);
-      for (const u of regularPrice) parts.push(`- ${u}`);
-      parts.push("");
-    }
-
-    if (skippedPantry.length > 0) {
-      parts.push(`## Skipped (in pantry): ${skippedPantry.join(", ")}`);
-    }
-
-    return {
-      content: [{ type: "text" as const, text: parts.join("\n") }],
-    };
   },
 );
 
@@ -806,7 +842,7 @@ server.tool(
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error("TilbudsTrolden MCP server v0.3.0 running on stdio");
+  console.error(`TilbudsTrolden MCP server v${SERVER_VERSION} running on stdio`);
 }
 
 main().catch((err) => {
