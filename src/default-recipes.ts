@@ -1,7 +1,8 @@
-// Starter recipe pack: 27 dinner recipes for Danish households.
-// Danish recipe ingredient lists adapted from valdemarsro.dk.
-// Uncle Roger recipes sourced from his YouTube cooking videos (Nigel Ng).
-// Asian staples (nasi goreng, chow mein) based on common versions.
+// Starter recipe pack: 28 dinner recipes for Danish households.
+// Danish recipes adapted from valdemarsro.dk.
+// Uncle Roger recipes from his YouTube cooking videos (Nigel Ng).
+// Bulgogi from maangchi.com (Maangchi / Emily Kim).
+// Nasi goreng and chow mein based on common versions.
 
 import type { Recipe } from "./store.js";
 
@@ -1945,6 +1946,100 @@ export const defaultRecipes: Recipe[] = [
         name: "Forårsløg",
         quantity: "1 bundt",
         searchTerms: ["forårsløg", "grønne løg"],
+        category: "produce",
+      },
+      {
+        name: "Jasminris",
+        quantity: "3 dl",
+        searchTerms: ["jasminris", "ris"],
+        category: "pantry",
+      },
+    ],
+  },
+  {
+    // Source: https://www.maangchi.com/recipe/bulgogi
+    name: "Maangchi's Bulgogi",
+    servings: 4,
+    complexity: "medium",
+    cuisineType: "asian",
+    proteinType: "beef",
+    ingredients: [
+      {
+        name: "Oksekød (mørbrad)",
+        quantity: "680 g",
+        searchTerms: ["oksekød", "oksemørbrad", "ribeye"],
+        category: "meat",
+      },
+      {
+        name: "Sojasauce",
+        quantity: "120 ml",
+        searchTerms: ["sojasauce", "soja"],
+        category: "pantry",
+      },
+      {
+        name: "Mirin",
+        quantity: "60 ml",
+        searchTerms: ["mirin", "risvin"],
+        category: "pantry",
+      },
+      {
+        name: "Brun farin",
+        quantity: "2 spsk",
+        searchTerms: ["brun farin", "farin"],
+        category: "pantry",
+      },
+      {
+        name: "Sesamolie",
+        quantity: "1 spsk",
+        searchTerms: ["sesamolie"],
+        category: "pantry",
+      },
+      {
+        name: "Sesamfrø",
+        quantity: "1 spsk",
+        searchTerms: ["sesamfrø"],
+        category: "pantry",
+      },
+      {
+        name: "Hvidløg",
+        quantity: "4-5 fed",
+        searchTerms: ["hvidløg"],
+        category: "produce",
+      },
+      {
+        name: "Ingefær",
+        quantity: "2.5 cm stykke",
+        searchTerms: ["ingefær", "frisk ingefær"],
+        category: "produce",
+      },
+      {
+        name: "Pære",
+        quantity: "0.5 stk",
+        searchTerms: ["pære", "konferencepære"],
+        category: "produce",
+      },
+      {
+        name: "Sort peber",
+        quantity: "0.25 tsk",
+        searchTerms: ["sort peber", "peber"],
+        category: "pantry",
+      },
+      {
+        name: "Løg",
+        quantity: "0.5 stk",
+        searchTerms: ["løg"],
+        category: "produce",
+      },
+      {
+        name: "Forårsløg",
+        quantity: "2-3 stk",
+        searchTerms: ["forårsløg", "grønne løg"],
+        category: "produce",
+      },
+      {
+        name: "Champignon",
+        quantity: "100 g",
+        searchTerms: ["champignon", "svampe"],
         category: "produce",
       },
       {
