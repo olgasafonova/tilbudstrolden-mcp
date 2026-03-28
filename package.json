@@ -2,7 +2,36 @@
   "name": "tilbudstrolden-mcp",
   "version": "0.3.0",
   "type": "module",
-  "description": "TilbudsTrolden: MCP server for Danish grocery deal hunting via etilbudsavis.dk",
+  "description": "MCP server for Danish grocery deal hunting. Search offers, score recipes against current deals, and generate optimized shopping lists.",
+  "author": "Olga Safonova",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/olgasafonova/tilbudstrolden-mcp.git"
+  },
+  "homepage": "https://github.com/olgasafonova/tilbudstrolden-mcp",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "grocery",
+    "deals",
+    "tilbud",
+    "danish",
+    "etilbudsavis",
+    "meal-planning",
+    "shopping-list",
+    "claude",
+    "ai-tools"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "main": "dist/server.js",
+  "files": [
+    "dist/",
+    "LICENSE",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsc",
     "start": "node dist/server.js",
@@ -12,7 +41,8 @@
     "format": "biome format --write src/",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "prepublishOnly": "npm run build"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
