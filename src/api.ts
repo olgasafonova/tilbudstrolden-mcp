@@ -132,10 +132,7 @@ async function fetchJson<T>(url: string): Promise<T> {
 }
 
 // Simple concurrency limiter for batch operations
-async function withConcurrencyLimit<T>(
-  tasks: (() => Promise<T>)[],
-  limit: number,
-): Promise<T[]> {
+async function withConcurrencyLimit<T>(tasks: (() => Promise<T>)[], limit: number): Promise<T[]> {
   const results: (T | undefined)[] = new Array(tasks.length);
   const executing: Set<Promise<void>> = new Set();
 
@@ -179,9 +176,7 @@ export async function searchDeals(query: string, limit = 20): Promise<Offer[]> {
     query,
     limit: String(limit * 3),
   });
-  const raw = await fetchJson<RawOffer[]>(
-    `${BASE_URL}/offers/search?${params}`,
-  );
+  const raw = await fetchJson<RawOffer[]>(`${BASE_URL}/offers/search?${params}`);
   const danishIds = await getDanishDealerIds();
   return raw
     .map(parseOffer)
@@ -189,10 +184,7 @@ export async function searchDeals(query: string, limit = 20): Promise<Offer[]> {
     .slice(0, limit);
 }
 
-export async function getStoreOffers(
-  dealerId: string,
-  limit = 50,
-): Promise<Offer[]> {
+export async function getStoreOffers(dealerId: string, limit = 50): Promise<Offer[]> {
   const params = new URLSearchParams({
     dealer_id: dealerId,
     limit: String(limit),

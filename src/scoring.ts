@@ -151,6 +151,94 @@ export function computeShoppingCost(
   };
 }
 
+/**
+ * Compute shopping cost from a pre-computed total quantity in base units.
+ * Used when quantities are aggregated across multiple recipes.
+ */
+export function computeShoppingCostFromTotal(
+  offer: Offer,
+  totalAmount: number,
+  unit: string,
+): ShoppingCost | null {
+  const price = offer.price;
+  if (price === null || price <= 0) return null;
+  if (totalAmount <= 0) return null;
+
+  const offerQty = offer.quantity;
+  const offerUnit = offer.unit?.toLowerCase() ?? null;
+  if (offerQty === null || offerQty <= 0 || !offerUnit) return null;
+
+  const offerConversion = UNIT_CONVERSIONS[offerUnit];
+  if (!offerConversion) return null;
+
+  const packSize = offerQty * offerConversion.factor;
+  if (offerConversion.base !== unit) return null;
+
+  const packsNeeded = Math.ceil(totalAmount / packSize);
+  const totalCost = packsNeeded * price;
+  const leftover = packsNeeded * packSize - totalAmount;
+
+  return {
+    quantityNeeded: Math.round(totalAmount),
+    unitNeeded: unit,
+    packSize: Math.round(packSize),
+    packsNeeded,
+    pricePerPack: price,
+    totalCost,
+    leftover: Math.round(leftover),
+    unitPrice: offer.pricePerUnit,
+  };
+}
+
+/**
+ * Sum multiple recipe quantities (each scaled for household) into a total.
+ * Returns null if any quantity is unparseable or units are incompatible.
+ */
+export function aggregateQuantities(
+  contributions: Array<{
+    quantity: string;
+    recipeServings: number;
+  }>,
+  householdSize: number,
+): { totalAmount: number; unit: string } | null {
+  let totalAmount = 0;
+  let baseUnit: string | null = null;
+
+  for (const c of contributions) {
+    const parsed = parseQuantity(c.quantity);
+    if (!parsed) return null;
+
+    if (baseUnit === null) {
+      baseUnit = parsed.unit;
+    } else if (baseUnit !== parsed.unit) {
+      return null; // incompatible units
+    }
+
+    const scale = c.recipeServings > 0 ? householdSize / c.recipeServings : 1;
+    totalAmount += parsed.amount * scale;
+  }
+
+  if (baseUnit === null || totalAmount <= 0) return null;
+  return { totalAmount: Math.round(totalAmount), unit: baseUnit };
+}
+
+/**
+ * Format a base-unit quantity for human display.
+ * Converts 1500g -> "1.5 kg", 250ml -> "2.5 dl", etc.
+ */
+export function formatQuantity(amount: number, unit: string): string {
+  if (unit === "g" && amount >= 1000) {
+    return `${(amount / 1000).toFixed(1).replace(/\.0$/, "")} kg`;
+  }
+  if (unit === "ml" && amount >= 1000) {
+    return `${(amount / 1000).toFixed(1).replace(/\.0$/, "")} L`;
+  }
+  if (unit === "ml" && amount >= 100) {
+    return `${(amount / 100).toFixed(1).replace(/\.0$/, "")} dl`;
+  }
+  return `${amount} ${unit}`;
+}
+
 // --- Types ---
 
 export interface DealCandidate {
@@ -289,14 +377,7 @@ export const SCORE = {
  * is a modifier/addition, not the primary product.
  * "Tunfilet i olivenolie" → olivenolie is a modifier.
  */
-const MODIFIER_PREPOSITIONS = [
-  " i ",
-  " med ",
-  " og ",
-  " på ",
-  " til ",
-  " fra ",
-];
+const MODIFIER_PREPOSITIONS = [" i ", " med ", " og ", " på ", " til ", " fra "];
 
 /**
  * Check if the search term appears only in a modifier position
@@ -338,8 +419,7 @@ export function scoreDealMatch(
     score += SCORE.PREFERRED_STORE_BONUS;
   }
 
-  const isBundleHeading =
-    heading.includes(" eller ") || heading.includes(" el. ");
+  const isBundleHeading = heading.includes(" eller ") || heading.includes(" el. ");
 
   if (ingredient.category === "meat" || ingredient.category === "frozen") {
     const isProcessed = PROCESSED_INDICATORS.some((p) => heading.includes(p));
@@ -400,12 +480,7 @@ export function findBestDeal(
   for (const term of ing.searchTerms) {
     const offers = dealMap.get(term) ?? [];
     for (const offer of offers) {
-      const matchScore = scoreDealMatch(
-        offer,
-        ing as Ingredient,
-        term,
-        preferredStores,
-      );
+      const matchScore = scoreDealMatch(offer, ing as Ingredient, term, preferredStores);
       if (matchScore < SCORE.VIABILITY_THRESHOLD) continue;
       allScored.push({ offer, score: matchScore });
     }
@@ -486,7 +561,7 @@ function isAllowedOnDay(
   // Check protein exclusions with per-day exceptions
   if (constraints.excludeProteins?.includes(recipe.proteinType)) {
     const exceptions = constraints.allowProteinOnDays?.[recipe.proteinType];
-    if (!exceptions || !exceptions.includes(day)) return false;
+    if (!exceptions?.includes(day)) return false;
   }
   // Check slow-only-on-days restriction
   if (
@@ -499,10 +574,7 @@ function isAllowedOnDay(
   return true;
 }
 
-function isValidCombo(
-  combo: ScoredRecipe[],
-  constraints: VarietyConstraints,
-): boolean {
+function isValidCombo(combo: ScoredRecipe[], constraints: VarietyConstraints): boolean {
   const proteinCount: Record<string, number> = {};
   const cuisineCount: Record<string, number> = {};
   let slowCount = 0;
@@ -549,39 +621,56 @@ export function findOptimalWeek(
   return findOptimalGreedy(filtered, days, constraints);
 }
 
+/** Check if a recipe fits the running variety tallies for greedy selection */
+function fitsGreedyConstraints(
+  recipe: ScoredRecipe,
+  day: number,
+  constraints: VarietyConstraints,
+  used: Set<string>,
+  proteinCount: Record<string, number>,
+  cuisineCount: Record<string, number>,
+  slowCount: number,
+): boolean {
+  if (used.has(recipe.name)) return false;
+  if (!isAllowedOnDay(recipe, day, constraints)) return false;
+  if ((proteinCount[recipe.proteinType] ?? 0) >= constraints.maxPerProtein) return false;
+  if ((cuisineCount[recipe.cuisineType] ?? 0) >= constraints.maxPerCuisine) return false;
+  if (recipe.complexity === "slow" && slowCount >= constraints.maxSlowDays) return false;
+  return true;
+}
+
 function findOptimalGreedy(
   scored: ScoredRecipe[],
   days: number,
   constraints: VarietyConstraints,
 ): { recipes: ScoredRecipe[]; basketCost: number } | null {
-  const byBasketValue = [...scored].sort(
-    (a, b) => a.estimatedCost - b.estimatedCost,
-  );
+  const byBasketValue = [...scored].sort((a, b) => a.estimatedCost - b.estimatedCost);
   const picked: (ScoredRecipe | null)[] = new Array(days).fill(null);
   const used = new Set<string>();
   const proteinCount: Record<string, number> = {};
   const cuisineCount: Record<string, number> = {};
   let slowCount = 0;
 
-  // Fill each day slot in order, respecting per-day constraints
   for (let dayIdx = 0; dayIdx < days; dayIdx++) {
     const day = dayIdx + 1;
     for (const recipe of byBasketValue) {
-      if (used.has(recipe.name)) continue;
-      if (!isAllowedOnDay(recipe, day, constraints)) continue;
-      if ((proteinCount[recipe.proteinType] ?? 0) >= constraints.maxPerProtein)
-        continue;
-      if ((cuisineCount[recipe.cuisineType] ?? 0) >= constraints.maxPerCuisine)
-        continue;
-      if (recipe.complexity === "slow" && slowCount >= constraints.maxSlowDays)
+      if (
+        !fitsGreedyConstraints(
+          recipe,
+          day,
+          constraints,
+          used,
+          proteinCount,
+          cuisineCount,
+          slowCount,
+        )
+      )
         continue;
 
       picked[dayIdx] = recipe;
       used.add(recipe.name);
-      proteinCount[recipe.proteinType] =
-        (proteinCount[recipe.proteinType] ?? 0) + 1;
-      cuisineCount[recipe.cuisineType] =
-        (cuisineCount[recipe.cuisineType] ?? 0) + 1;
+      proteinCount[recipe.proteinType] = (proteinCount[recipe.proteinType] ?? 0) + 1;
+      cuisineCount[recipe.cuisineType] = (cuisineCount[recipe.cuisineType] ?? 0) + 1;
       if (recipe.complexity === "slow") slowCount++;
       break;
     }
@@ -618,15 +707,12 @@ function findOptimalBrute(
   }
 
   const hasDayConstraints =
-    (constraints.excludeProteins?.length ?? 0) > 0 ||
-    (constraints.slowOnlyOnDays?.length ?? 0) > 0;
+    (constraints.excludeProteins?.length ?? 0) > 0 || (constraints.slowOnlyOnDays?.length ?? 0) > 0;
 
   if (hasDayConstraints) {
     // Permutations needed: order matters for day-specific constraints.
     // Limit search space: pre-sort by cost and cap candidates.
-    const candidates = [...scored]
-      .sort((a, b) => a.estimatedCost - b.estimatedCost)
-      .slice(0, 10);
+    const candidates = [...scored].sort((a, b) => a.estimatedCost - b.estimatedCost).slice(0, 10);
     for (const perm of permutations(candidates, days)) {
       if (!isValidCombo(perm, constraints)) continue;
       const basket = calculateBasketCost(perm);
@@ -637,11 +723,7 @@ function findOptimalBrute(
     }
   } else {
     // No day-specific constraints: combinations suffice (faster).
-    function* combinations(
-      arr: ScoredRecipe[],
-      k: number,
-      start = 0,
-    ): Generator<ScoredRecipe[]> {
+    function* combinations(arr: ScoredRecipe[], k: number, start = 0): Generator<ScoredRecipe[]> {
       if (k === 0) {
         yield [];
         return;
