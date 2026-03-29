@@ -8,7 +8,9 @@
 **The deal troll that lives under the bridge between your fridge and your wallet.**
 
 <p align="center">
-  <img src="assets/trolden-cooking.png" alt="TilbudsTrolden cooking up deals" width="400" />
+  <img src="assets/trolden-cooking.png" alt="TilbudsTrolden cooking up deals" width="380" />
+  &nbsp;&nbsp;
+  <img src="assets/mascot.png" alt="TilbudsTrolden browsing grocery deals" width="380" />
 </p>
 
 An [MCP](https://modelcontextprotocol.io) server that searches Danish grocery chains for current deals, scores your recipes against this week's offers, and builds shopping lists optimized by price and store. You talk to your AI assistant about dinner; the troll does the legwork.
