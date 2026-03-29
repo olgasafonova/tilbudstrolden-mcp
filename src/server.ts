@@ -11,6 +11,7 @@ import {
   computeShoppingCost,
   computeShoppingCostFromTotal,
   type DealCandidate,
+  expandSearchTerms,
   findBestDeal,
   findOptimalWeek,
   formatQuantity,
@@ -698,7 +699,7 @@ async function scoreAllRecipes(
   for (const recipe of recipes) {
     for (const ing of recipe.ingredients) {
       if (pantrySet.has(ing.name.toLowerCase())) continue;
-      for (const term of ing.searchTerms) {
+      for (const term of expandSearchTerms(ing.searchTerms)) {
         allTerms.add(term);
       }
     }
@@ -799,7 +800,9 @@ server.tool(
     excludeProteins: z
       .array(z.string())
       .optional()
-      .describe('Proteins to exclude globally, e.g. ["pork"]'),
+      .describe(
+        'Dietary exclusions. Checks both recipe type and individual ingredients. E.g. ["pork"] also catches bacon in vegetarian recipes. Options: pork, beef, lamb, fish, shellfish, dairy, gluten, beans, nuts, egg',
+      ),
     allowProteinOnDays: z
       .record(z.string(), z.array(z.number()))
       .optional()
@@ -810,6 +813,12 @@ server.tool(
       .array(z.number())
       .optional()
       .describe("Restrict slow recipes to these days only (1-indexed). E.g. [6, 7] for weekends"),
+    preferCuisines: z
+      .record(z.string(), z.number())
+      .optional()
+      .describe(
+        'Soft cuisine preferences: {"asian": 3} = prefer at least 3 Asian dishes. Best-effort, won\'t fail if impossible.',
+      ),
   },
   async ({
     optimize,
@@ -820,6 +829,7 @@ server.tool(
     excludeProteins,
     allowProteinOnDays,
     slowOnlyOnDays,
+    preferCuisines,
   }) => {
     try {
       const household = await store.getHousehold();
@@ -844,6 +854,7 @@ server.tool(
           excludeProteins,
           allowProteinOnDays,
           slowOnlyOnDays,
+          preferCuisines,
         });
         if (bestPlan) {
           const basket = calculateBasketCost(bestPlan.recipes);
@@ -1153,7 +1164,7 @@ async function buildShoppingList(
   } else {
     const allSearchTerms = new Set<string>();
     for (const [, ing] of allIngredients) {
-      for (const term of ing.searchTerms) allSearchTerms.add(term);
+      for (const term of expandSearchTerms(ing.searchTerms)) allSearchTerms.add(term);
     }
     dealMap = await searchDealsBatch([...allSearchTerms], 8);
   }
@@ -1344,11 +1355,18 @@ server.tool(
       .default(2)
       .describe("Max same cuisine in plan (default 2)"),
     maxSlowDays: z.number().optional().default(2).describe("Max slow-cook days (default 2)"),
-    excludeProteins: z.array(z.string()).optional().describe('Proteins to exclude, e.g. ["pork"]'),
+    excludeProteins: z
+      .array(z.string())
+      .optional()
+      .describe('Dietary exclusions, e.g. ["pork", "dairy"]. Also scans ingredient names.'),
     slowOnlyOnDays: z
       .array(z.number())
       .optional()
       .describe("Restrict slow recipes to these days (1-indexed). E.g. [6, 7]"),
+    preferCuisines: z
+      .record(z.string(), z.number())
+      .optional()
+      .describe('Soft cuisine preferences: {"asian": 3} = prefer at least 3 Asian dishes'),
   },
   async ({
     days,
@@ -1358,6 +1376,7 @@ server.tool(
     maxSlowDays,
     excludeProteins,
     slowOnlyOnDays,
+    preferCuisines,
   }) => {
     try {
       const household = await store.getHousehold();
@@ -1384,6 +1403,7 @@ server.tool(
         maxSlowDays,
         excludeProteins,
         slowOnlyOnDays,
+        preferCuisines,
       });
 
       if (!bestPlan) {

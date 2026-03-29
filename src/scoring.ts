@@ -372,6 +372,39 @@ export const SCORE = {
   CONFIDENT_THRESHOLD: 55,
 } as const;
 
+// --- Search term synonyms ---
+
+/**
+ * Maps Danish ingredient terms to synonyms used in store flyers.
+ * Expands search coverage for deal matching.
+ */
+export const SYNONYM_MAP: Record<string, string[]> = {
+  svinekød: ["grisekød", "grise-"],
+  "hakket svinekød": ["hakket grisekød", "grise- og kalvekød"],
+  svinefars: ["grisefars"],
+  oksekød: ["okse-"],
+  oksefars: ["hakket oksekød"],
+  kyllingebryst: ["kylling"],
+  kyllingefilet: ["kylling"],
+  kyllingelår: ["kylling", "kyllingeunderlår"],
+  kyllingestykker: ["kylling", "hel kylling"],
+  rejer: ["skalrejer"],
+};
+
+/**
+ * Expand search terms with Danish synonyms for better flyer matching.
+ */
+export function expandSearchTerms(terms: string[]): string[] {
+  const expanded = new Set(terms);
+  for (const term of terms) {
+    const synonyms = SYNONYM_MAP[term.toLowerCase()];
+    if (synonyms) {
+      for (const syn of synonyms) expanded.add(syn);
+    }
+  }
+  return [...expanded];
+}
+
 /**
  * Danish prepositions that indicate the search term after them
  * is a modifier/addition, not the primary product.
@@ -476,8 +509,9 @@ export function findBestDeal(
   preferredStores: Set<string>,
 ): DealSearchResult {
   const allScored: { offer: Offer; score: number }[] = [];
+  const searchTerms = expandSearchTerms(ing.searchTerms);
 
-  for (const term of ing.searchTerms) {
+  for (const term of searchTerms) {
     const offers = dealMap.get(term) ?? [];
     for (const offer of offers) {
       const matchScore = scoreDealMatch(offer, ing as Ingredient, term, preferredStores);
@@ -538,18 +572,115 @@ export function calculateBasketCost(recipes: ScoredRecipe[]): {
   return { totalCost, uniqueIngredients: seen.size, sharedSavings };
 }
 
+// --- Dietary ingredient tagging ---
+
+/**
+ * Maps dietary exclusion keywords to ingredient name patterns.
+ * Used to detect excluded ingredients beyond just proteinType.
+ * E.g. "pork" catches bacon in a "vegetarian" soup.
+ */
+export const INGREDIENT_TAGS: Record<string, string[]> = {
+  pork: [
+    "bacon",
+    "chorizo",
+    "salsiccia",
+    "pølse",
+    "wienerpølse",
+    "flæsk",
+    "flæskesteg",
+    "brystflæsk",
+    "svinekød",
+    "svinekam",
+    "svinekotelet",
+    "grisekød",
+    "grisefars",
+    "svinefars",
+    "mørbrad af gris",
+  ],
+  beef: ["oksekød", "oksemørbrad", "oksefars", "hakket okse"],
+  lamb: ["lam", "lammekølle", "lammeculotte"],
+  fish: ["laks", "fisk", "rødspætte", "torsk", "kuller", "tun", "sild"],
+  shellfish: ["rejer", "hummer", "muslinger", "skalrejer"],
+  dairy: [
+    "mælk",
+    "fløde",
+    "piskefløde",
+    "smør",
+    "ost",
+    "parmesan",
+    "mozzarella",
+    "creme fraiche",
+    "yoghurt",
+    "crème fraîche",
+  ],
+  gluten: [
+    "mel",
+    "hvedemel",
+    "pasta",
+    "spaghetti",
+    "nudler",
+    "ægnudler",
+    "brød",
+    "rugbrød",
+    "lasagneplader",
+    "tortilla",
+    "rasp",
+  ],
+  beans: ["bønner", "kidneybønner", "linser", "kikærter"],
+  nuts: ["cashewnødder", "mandler", "peanuts", "nødder", "hasselnødder"],
+  egg: ["æg"],
+};
+
+/**
+ * Check if a recipe contains ingredients matching any of the excluded dietary tags.
+ * Returns the first matched tag, or null if no match.
+ */
+export function findExcludedTag(
+  ingredients: ScoredIngredient[],
+  exclusions: string[],
+): string | null {
+  for (const tag of exclusions) {
+    const patterns = INGREDIENT_TAGS[tag];
+    if (!patterns) continue;
+    for (const ing of ingredients) {
+      const name = ing.name.toLowerCase();
+      if (patterns.some((p) => name.includes(p))) return tag;
+    }
+  }
+  return null;
+}
+
 // --- Variety constraints ---
 
 export interface VarietyConstraints {
   maxPerProtein: number;
   maxPerCuisine: number;
   maxSlowDays: number;
-  /** Proteins to exclude globally, e.g. ["pork"] */
+  /** Dietary exclusions: ["pork", "dairy", "nuts", ...]. Checks both proteinType and ingredient names. */
   excludeProteins?: string[];
-  /** Per-protein day exceptions (1-indexed): {"pork": [2]} = allow pork on day 2 */
+  /** Per-tag day exceptions (1-indexed): {"pork": [2]} = allow pork on day 2 */
   allowProteinOnDays?: Record<string, number[]>;
   /** Restrict slow recipes to these days only (1-indexed), e.g. [6, 7] for weekends */
   slowOnlyOnDays?: number[];
+  /** Soft cuisine preferences: {"asian": 3} = prefer at least 3 Asian dishes. Best-effort. */
+  preferCuisines?: Record<string, number>;
+}
+
+/** Compute a penalty for unmet cuisine preferences. Higher = further from target. */
+export function cuisinePreferencePenalty(
+  combo: ScoredRecipe[],
+  preferCuisines: Record<string, number>,
+): number {
+  const counts: Record<string, number> = {};
+  for (const r of combo) {
+    counts[r.cuisineType] = (counts[r.cuisineType] ?? 0) + 1;
+  }
+  let penalty = 0;
+  for (const [cuisine, target] of Object.entries(preferCuisines)) {
+    const actual = counts[cuisine] ?? 0;
+    if (actual < target) penalty += (target - actual) * 50;
+  }
+  return penalty;
 }
 
 /** Check if a recipe is allowed on a specific day (1-indexed). */
@@ -558,10 +689,20 @@ function isAllowedOnDay(
   day: number,
   constraints: VarietyConstraints,
 ): boolean {
-  // Check protein exclusions with per-day exceptions
-  if (constraints.excludeProteins?.includes(recipe.proteinType)) {
-    const exceptions = constraints.allowProteinOnDays?.[recipe.proteinType];
-    if (!exceptions?.includes(day)) return false;
+  if (!constraints.excludeProteins?.length) {
+    // No exclusions; skip all dietary checks
+  } else {
+    // Check proteinType-level exclusion
+    if (constraints.excludeProteins.includes(recipe.proteinType)) {
+      const exceptions = constraints.allowProteinOnDays?.[recipe.proteinType];
+      if (!exceptions?.includes(day)) return false;
+    }
+    // Check ingredient-level exclusion (catches bacon in "vegetarian" recipes, etc.)
+    const matchedTag = findExcludedTag(recipe.ingredients, constraints.excludeProteins);
+    if (matchedTag && matchedTag !== recipe.proteinType) {
+      const exceptions = constraints.allowProteinOnDays?.[matchedTag];
+      if (!exceptions?.includes(day)) return false;
+    }
   }
   // Check slow-only-on-days restriction
   if (
@@ -603,11 +744,18 @@ export function findOptimalWeek(
   days: number,
   constraints: VarietyConstraints,
 ): { recipes: ScoredRecipe[]; basketCost: number } | null {
-  // Pre-filter: remove globally excluded proteins (unless they have day exceptions)
+  // Pre-filter: remove recipes that are globally excluded (unless they have day exceptions)
   const hasExceptions = constraints.allowProteinOnDays ?? {};
+  const exclusions = constraints.excludeProteins ?? [];
   const filtered = scored.filter((r) => {
-    if (constraints.excludeProteins?.includes(r.proteinType)) {
+    // Check proteinType exclusion
+    if (exclusions.includes(r.proteinType)) {
       return (hasExceptions[r.proteinType]?.length ?? 0) > 0;
+    }
+    // Check ingredient-level exclusion
+    const matchedTag = findExcludedTag(r.ingredients, exclusions);
+    if (matchedTag) {
+      return (hasExceptions[matchedTag]?.length ?? 0) > 0;
     }
     return true;
   });
@@ -678,8 +826,59 @@ function findOptimalGreedy(
 
   const result = picked.filter((r): r is ScoredRecipe => r !== null);
   if (result.length < days) return null;
-  const basket = calculateBasketCost(result);
-  return { recipes: result, basketCost: basket.totalCost };
+
+  // Post-fill: swap to improve cuisine preferences if configured
+  const improved = constraints.preferCuisines
+    ? applyPreferenceSwaps(result, scored, constraints)
+    : result;
+
+  const basket = calculateBasketCost(improved);
+  return { recipes: improved, basketCost: basket.totalCost };
+}
+
+/** Swap non-preferred recipes for preferred-cuisine ones, maintaining constraint validity */
+function applyPreferenceSwaps(
+  plan: ScoredRecipe[],
+  allRecipes: ScoredRecipe[],
+  constraints: VarietyConstraints,
+): ScoredRecipe[] {
+  const prefs = constraints.preferCuisines ?? {};
+  const result = [...plan];
+  const usedNames = new Set(result.map((r) => r.name));
+
+  for (const [cuisine, target] of Object.entries(prefs)) {
+    let count = result.filter((r) => r.cuisineType === cuisine).length;
+    if (count >= target) continue;
+
+    // Find candidate recipes of the preferred cuisine not already in plan
+    const candidates = allRecipes
+      .filter((r) => r.cuisineType === cuisine && !usedNames.has(r.name))
+      .sort((a, b) => a.estimatedCost - b.estimatedCost);
+
+    // Find swappable slots: non-preferred cuisine, sorted by cost (most expensive first)
+    const swappable = result
+      .map((r, i) => ({ recipe: r, index: i }))
+      .filter((s) => s.recipe.cuisineType !== cuisine)
+      .sort((a, b) => b.recipe.estimatedCost - a.recipe.estimatedCost);
+
+    for (const candidate of candidates) {
+      if (count >= target) break;
+      for (const slot of swappable) {
+        if (result[slot.index].cuisineType === cuisine) continue; // already swapped
+        // Try swap and validate
+        const backup = result[slot.index];
+        result[slot.index] = candidate;
+        if (isValidCombo(result, constraints)) {
+          usedNames.delete(backup.name);
+          usedNames.add(candidate.name);
+          count++;
+          break;
+        }
+        result[slot.index] = backup; // revert
+      }
+    }
+  }
+  return result;
 }
 
 function findOptimalBrute(
@@ -708,16 +907,21 @@ function findOptimalBrute(
 
   const hasDayConstraints =
     (constraints.excludeProteins?.length ?? 0) > 0 || (constraints.slowOnlyOnDays?.length ?? 0) > 0;
+  const prefs = constraints.preferCuisines ?? {};
+
+  // Adjusted cost includes a soft penalty for unmet cuisine preferences
+  function adjustedCost(combo: ScoredRecipe[]): number {
+    return calculateBasketCost(combo).totalCost + cuisinePreferencePenalty(combo, prefs);
+  }
 
   if (hasDayConstraints) {
     // Permutations needed: order matters for day-specific constraints.
-    // Limit search space: pre-sort by cost and cap candidates.
     const candidates = [...scored].sort((a, b) => a.estimatedCost - b.estimatedCost).slice(0, 10);
     for (const perm of permutations(candidates, days)) {
       if (!isValidCombo(perm, constraints)) continue;
-      const basket = calculateBasketCost(perm);
-      if (basket.totalCost < bestCost) {
-        bestCost = basket.totalCost;
+      const cost = adjustedCost(perm);
+      if (cost < bestCost) {
+        bestCost = cost;
         bestCombo = [...perm];
       }
     }
@@ -737,14 +941,15 @@ function findOptimalBrute(
 
     for (const combo of combinations(scored, days)) {
       if (!isValidCombo(combo, constraints)) continue;
-      const basket = calculateBasketCost(combo);
-      if (basket.totalCost < bestCost) {
-        bestCost = basket.totalCost;
+      const cost = adjustedCost(combo);
+      if (cost < bestCost) {
+        bestCost = cost;
         bestCombo = combo;
       }
     }
   }
 
   if (!bestCombo) return null;
-  return { recipes: bestCombo, basketCost: bestCost };
+  const realCost = calculateBasketCost(bestCombo).totalCost;
+  return { recipes: bestCombo, basketCost: realCost };
 }

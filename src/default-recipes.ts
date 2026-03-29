@@ -18,7 +18,7 @@ export const defaultRecipes: Recipe[] = [
       {
         name: "Hakket svinekød",
         quantity: "500 g",
-        searchTerms: ["hakket svinekød", "svinefars", "fars"],
+        searchTerms: ["hakket svinekød", "svinefars", "fars", "grisekød", "grisefars"],
         category: "meat",
       },
       {
@@ -789,7 +789,7 @@ export const defaultRecipes: Recipe[] = [
       {
         name: "Kyllingebryst",
         quantity: "800 g",
-        searchTerms: ["kyllingebryst", "kyllingefilet"],
+        searchTerms: ["kyllingebryst", "kyllingefilet", "kylling"],
         category: "meat",
       },
       {
@@ -870,7 +870,7 @@ export const defaultRecipes: Recipe[] = [
       {
         name: "Kyllingebryst",
         quantity: "400 g",
-        searchTerms: ["kyllingebryst", "kyllingefilet"],
+        searchTerms: ["kyllingebryst", "kyllingefilet", "kylling"],
         category: "meat",
       },
       {
@@ -1410,7 +1410,7 @@ export const defaultRecipes: Recipe[] = [
       {
         name: "Kyllingebryst",
         quantity: "4 stk",
-        searchTerms: ["kyllingebryst", "kyllingefilet"],
+        searchTerms: ["kyllingebryst", "kyllingefilet", "kylling"],
         category: "meat",
       },
       {
@@ -1723,7 +1723,7 @@ export const defaultRecipes: Recipe[] = [
       {
         name: "Kyllingebryst",
         quantity: "300 g",
-        searchTerms: ["kyllingebryst", "kyllingefilet"],
+        searchTerms: ["kyllingebryst", "kyllingefilet", "kylling"],
         category: "meat",
       },
       {
