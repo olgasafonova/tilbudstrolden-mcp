@@ -6,6 +6,8 @@ dist/
 .tilbudstrolden.json
 CLAUDE.md
 
-# Dolt database files (added by bd init)
+# Internal tooling
 .dolt/
+.beads/
+AGENTS.md
 *.db
