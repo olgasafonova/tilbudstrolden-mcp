@@ -48,6 +48,9 @@
     "@modelcontextprotocol/sdk": "^1.28.0",
     "zod": "^4.3.6"
   },
+  "overrides": {
+    "path-to-regexp": "^8.4.0"
+  },
   "devDependencies": {
     "@biomejs/biome": "^2.4.9",
     "@types/node": "^25.5.0",
