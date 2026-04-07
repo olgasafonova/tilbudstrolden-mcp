@@ -55,7 +55,7 @@ Record what you cooked and what you spent. The planner keeps track so you don't 
 
 **Sweden:** ICA (Maxi/Kvantum/Supermarket/Nara), Willys, Hemkop, City Gross, Coop, Stora Coop, Tempo
 
-All data from [etilbudsavis.dk](https://etilbudsavis.dk) (Tjek). Coverage varies by country; Denmark has the deepest flyer data, followed by Sweden and Norway.
+All deal data is fetched via the [etilbudsavis.dk](https://etilbudsavis.dk) (Tjek) API, which serves flyer data for all three countries. Coverage varies; Denmark has the deepest data, followed by Sweden and Norway.
 
 ## Quick start
 
@@ -333,11 +333,11 @@ npm test             # run tests (Vitest)
 ## Requirements
 
 - Node.js 18 or later
-- No API keys needed. All deal data comes from the [etilbudsavis.dk](https://etilbudsavis.dk) (Tjek) public API, which covers Denmark, Norway, and Sweden from a single endpoint.
+- No API keys needed. Deal data is fetched via the [etilbudsavis.dk](https://etilbudsavis.dk) (Tjek) public API, which serves all three Nordic markets.
 
 ## Credits
 
-Deal data from [etilbudsavis.dk](https://etilbudsavis.dk) (Tjek), covering Denmark, Norway, and Sweden.
+Deal data fetched via the [etilbudsavis.dk](https://etilbudsavis.dk) (Tjek) API.
 
 Starter recipe ingredient lists adapted from [valdemarsro.dk](https://valdemarsro.dk). Uncle Roger recipes from [Nigel Ng's YouTube](https://www.youtube.com/@mrnigelng) ([Egg Fried Rice](https://www.youtube.com/watch?v=SGBP3sG3a9Y), [Adobo](https://www.youtube.com/watch?v=KKpWGnkO3e4)). Bulgogi recipe from [Maangchi](https://www.maangchi.com/recipe/bulgogi). Swedish family recipes from [jarfors.com](https://jarfors.com/recipe) by [Mikael Jarfors](https://www.linkedin.com/in/mikael-jarfors/).
 
