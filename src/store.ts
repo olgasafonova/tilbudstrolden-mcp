@@ -24,6 +24,7 @@ export interface Household {
   people: Person[];
   stores: StorePreference[];
   defaultServings: number;
+  country: string; // "DK", "NO", "SE"
 }
 
 export interface Ingredient {
@@ -88,8 +89,9 @@ const DataStoreSchema = z.object({
         )
         .default([]),
       defaultServings: z.number().default(2),
+      country: z.string().default("DK"),
     })
-    .default({ people: [], stores: [], defaultServings: 2 }),
+    .default({ people: [], stores: [], defaultServings: 2, country: "DK" }),
   pantry: z.array(z.string()).default([]),
   recipes: z
     .array(
@@ -140,6 +142,7 @@ function emptyStore(): DataStore {
       people: [],
       stores: [],
       defaultServings: 2,
+      country: "DK",
     },
     pantry: [],
     recipes: [],
@@ -251,10 +254,11 @@ export async function updatePantry(add: string[], remove: string[]): Promise<str
 
 export async function getRecipes(): Promise<Recipe[]> {
   const data = await load();
-  if (data.recipes.length === 0) {
-    // Seed default recipes on first use, then return them
+  if (data.recipes.length === 0 && data.household.country === "DK") {
+    // Seed default recipes on first use for DK households only.
+    // Default recipes use Danish search terms and won't match NO/SE offers.
     const seeded = await modify((s) => {
-      if (s.recipes.length === 0) {
+      if (s.recipes.length === 0 && s.household.country === "DK") {
         s.recipes = [...defaultRecipes];
       }
       return s;

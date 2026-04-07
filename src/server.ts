@@ -4,6 +4,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import type { Offer } from "./api.js";
 import { getStoreOffers, listStores, searchDeals, searchDealsBatch } from "./api.js";
+import { getLocale, isValidCountry, type Locale, SUPPORTED_COUNTRIES } from "./locales.js";
 import {
   aggregateQuantities,
   calculateBasketCost,
@@ -34,21 +35,16 @@ function errorResult(message: string) {
   };
 }
 
-const KNOWN_STORES: Record<string, string> = {
-  netto: "9ba51",
-  meny: "267e1m",
-  lidl: "71c90",
-  rema: "11deC",
-  "rema 1000": "11deC",
-  rema1000: "11deC",
-  foetex: "bdf5A",
-  føtex: "bdf5A",
-  bilka: "93f13",
-  spar: "88ddE",
-  kvickly: "c1edq",
-  "365discount": "DWZE1w",
-  "365": "DWZE1w",
-};
+/** Get known stores for a locale, merging all country stores for lookup */
+function getKnownStores(locale: Locale): Record<string, string> {
+  return locale.knownStores;
+}
+
+/** Get the active locale from household config */
+async function getActiveLocale(): Promise<Locale> {
+  const household = await store.getHousehold();
+  return getLocale(household.country);
+}
 
 /** Days until a deal expires. Negative means already expired. */
 function daysUntilExpiry(validUntil: string | null | undefined): number {
@@ -103,13 +99,13 @@ server.prompt(
           type: "text" as const,
           text: `Help me set up TilbudsTrolden for meal planning. Walk me through these steps:
 
-1. Set up my household (who lives here, dietary restrictions) using update_household
+1. Set my country (DK, NO, or SE) and household (who lives here, dietary restrictions) using update_household
 2. Configure preferred stores (use list_stores to find IDs, then update_household)
 3. Add my pantry staples using update_pantry (things I always have: salt, pepper, oil, etc.)
 4. Add a few recipes using add_recipe
 5. Test it by running plan_and_shop to get a meal plan with shopping list
 
-Ask me questions at each step. Start with: how many people in my household?`,
+Ask me questions at each step. Start with: which country are you in, and how many people in your household?`,
         },
       },
     ],
@@ -163,14 +159,19 @@ server.prompt(
 
 server.tool(
   "search_deals",
-  "Search grocery deals across Danish stores by keyword. USE WHEN: finding specific products ('find deals on kylling'), checking prices, comparing stores. NOT FOR: browsing one store's catalog (use get_store_offers) or generating a shopping list (use generate_shopping_list). Returns deals sorted by relevance with unit prices.",
+  "Search grocery deals across stores by keyword. Supports Denmark (DK), Norway (NO), and Sweden (SE) based on household country setting. USE WHEN: finding specific products, checking prices, comparing stores. NOT FOR: browsing one store's catalog (use get_store_offers) or generating a shopping list (use generate_shopping_list). Returns deals sorted by relevance with unit prices.",
   {
-    query: z.string().describe("Danish search term, e.g. 'hakket oksekød'"),
+    query: z
+      .string()
+      .describe(
+        "Search term in local language, e.g. 'hakket oksekød' (DK), 'kjøttdeig' (NO), 'köttfärs' (SE)",
+      ),
     limit: z.number().optional().default(20).describe("Max results (default 20)"),
   },
   async ({ query, limit }) => {
     try {
-      const offers = await searchDeals(query.trim(), limit);
+      const locale = await getActiveLocale();
+      const offers = await searchDeals(query.trim(), limit, locale.country);
       return {
         content: [
           {
@@ -191,12 +192,16 @@ server.tool(
   {
     store: z
       .string()
-      .describe(`Store name or dealer ID. Known: ${Object.keys(KNOWN_STORES).join(", ")}`),
+      .describe(
+        "Store name or dealer ID. Use list_stores to see available stores for your country.",
+      ),
     limit: z.number().optional().default(50).describe("Max results"),
   },
   async ({ store: storeName, limit }) => {
     try {
-      const dealerId = KNOWN_STORES[storeName.trim().toLowerCase()] ?? storeName.trim();
+      const locale = await getActiveLocale();
+      const knownStores = getKnownStores(locale);
+      const dealerId = knownStores[storeName.trim().toLowerCase()] ?? storeName.trim();
       const offers = await getStoreOffers(dealerId, limit);
       const name = offers[0]?.store ?? storeName;
       return {
@@ -215,15 +220,43 @@ server.tool(
 
 server.tool(
   "list_stores",
-  "List Danish grocery chains with dealer IDs. USE WHEN: finding store IDs for get_store_offers or setting up household preferred stores via update_household. NOT FOR: seeing deals (use search_deals or deals_this_week).",
+  "List grocery chains with dealer IDs for your country (DK/NO/SE). USE WHEN: finding store IDs for get_store_offers or setting up household preferred stores via update_household. NOT FOR: seeing deals (use search_deals or deals_this_week).",
   {
     query: z.string().optional().describe("Filter by name"),
     all: z.boolean().optional().default(false).describe("Include non-grocery stores too"),
   },
   async ({ query, all }) => {
     try {
+      const locale = await getActiveLocale();
       if (all) {
-        const stores = await listStores();
+        if (locale.country !== "DK") {
+          // The /dealers endpoint ignores country_id for non-DK; it always returns DK stores.
+          // Fall through to the known-stores path which uses verified locale data.
+          // Inform the user about this limitation.
+          const knownStores = getKnownStores(locale);
+          let entries = Object.entries(knownStores);
+          // Deduplicate aliases
+          const idSeen = new Set<string>();
+          entries = entries.filter(([, id]) => {
+            if (idSeen.has(id)) return false;
+            idSeen.add(id);
+            return true;
+          });
+          if (query) {
+            const q = query.toLowerCase();
+            entries = entries.filter(([key]) => key.includes(q));
+          }
+          const lines = entries.map(([name, id]) => `- ${name} (id: ${id})`);
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `${lines.length} known ${locale.countryName} grocery stores:\n\n${lines.join("\n")}\n\nNote: Full store directory is only available for Denmark. Use these known stores or find dealer IDs from search_deals results.`,
+              },
+            ],
+          };
+        }
+        const stores = await listStores(locale.country);
         let filtered = stores.sort((a, b) => a.name.localeCompare(b.name));
         if (query) {
           const q = query.toLowerCase();
@@ -242,10 +275,24 @@ server.tool(
         };
       }
 
-      // Default: known grocery stores only
-      let entries = Object.entries(KNOWN_STORES).filter(
-        ([key]) => !["rema", "rema1000", "foetex"].includes(key), // skip aliases
-      );
+      // Default: known grocery stores only for this country
+      const knownStores = getKnownStores(locale);
+      // Build alias skip list: entries that map to same ID as another entry
+      const idCount = new Map<string, string[]>();
+      for (const [key, id] of Object.entries(knownStores)) {
+        const list = idCount.get(id) ?? [];
+        list.push(key);
+        idCount.set(id, list);
+      }
+      const aliasKeys = new Set<string>();
+      for (const names of idCount.values()) {
+        if (names.length > 1) {
+          // Keep the longest name, skip the rest as aliases
+          names.sort((a, b) => b.length - a.length);
+          for (const n of names.slice(1)) aliasKeys.add(n);
+        }
+      }
+      let entries = Object.entries(knownStores).filter(([key]) => !aliasKeys.has(key));
       if (query) {
         const q = query.toLowerCase();
         entries = entries.filter(([key]) => key.includes(q));
@@ -274,6 +321,7 @@ server.tool(
   async ({ limit }) => {
     try {
       const household = await store.getHousehold();
+      const locale = getLocale(household.country);
       if (household.stores.length === 0) {
         return errorResult(
           "No preferred stores configured. Use update_household to add stores first (use list_stores to find dealer IDs).",
@@ -324,8 +372,9 @@ server.tool(
           parts.push(`\nBest savings:`);
           for (const o of withSavings) {
             const saved = Math.round(o.prePrice - o.price);
+            const cur = o.currency || locale.currency;
             parts.push(
-              `- ${o.heading}: ${o.price} DKK (save ${saved} DKK) ${o.pricePerUnit ? `(${o.pricePerUnit})` : ""}`,
+              `- ${o.heading}: ${o.price} ${cur} (save ${saved} ${cur}) ${o.pricePerUnit ? `(${o.pricePerUnit})` : ""}`,
             );
           }
         }
@@ -382,7 +431,7 @@ Then run plan_and_shop to get a meal plan with shopping list!`,
       content: [
         {
           type: "text" as const,
-          text: `Household (default ${household.defaultServings} servings):\n\nPeople:\n${people.join("\n")}\n\nStores (by priority):\n${stores.join("\n")}`,
+          text: `Household (${household.country} market, default ${household.defaultServings} servings):\n\nPeople:\n${people.join("\n")}\n\nStores (by priority):\n${stores.join("\n")}`,
         },
       ],
     };
@@ -391,8 +440,14 @@ Then run plan_and_shop to get a meal plan with shopping list!`,
 
 server.tool(
   "update_household",
-  "Set household members, dietary restrictions, preferred stores, servings. USE WHEN: first-time setup or changing household config. Required before shopping lists can filter by preferred stores. TIP: use list_stores to find dealer IDs for preferred stores.",
+  `Set household members, dietary restrictions, preferred stores, country, servings. USE WHEN: first-time setup or changing household config. Required before shopping lists can filter by preferred stores. TIP: use list_stores to find dealer IDs. Set country to change market: ${SUPPORTED_COUNTRIES.join(", ")}.`,
   {
+    country: z
+      .string()
+      .optional()
+      .describe(
+        `Country code: ${SUPPORTED_COUNTRIES.join(", ")}. Defaults to DK. Changes which stores and deals are shown.`,
+      ),
     people: z
       .array(
         z.object({
@@ -417,8 +472,16 @@ server.tool(
       .describe("Preferred stores"),
     defaultServings: z.number().optional().describe("Default servings"),
   },
-  async ({ people, stores: storePrefs, defaultServings }) => {
+  async ({ country, people, stores: storePrefs, defaultServings }) => {
     const updates: Partial<store.Household> = {};
+    if (country) {
+      if (!isValidCountry(country)) {
+        return errorResult(
+          `Invalid country code "${country}". Supported: ${SUPPORTED_COUNTRIES.join(", ")}`,
+        );
+      }
+      updates.country = country.toUpperCase();
+    }
     if (people) {
       updates.people = people.map((p) => ({
         ...p,
@@ -441,7 +504,7 @@ server.tool(
       content: [
         {
           type: "text" as const,
-          text: `Household updated: ${household.people.length} people, ${household.stores.length} stores, default ${household.defaultServings} servings.`,
+          text: `Household updated: ${household.country} market, ${household.people.length} people, ${household.stores.length} stores, default ${household.defaultServings} servings.`,
         },
       ],
     };
@@ -623,6 +686,7 @@ function scoreOneRecipe(
   preferredStoreNames: Set<string>,
   pantrySet: Set<string>,
   householdSize: number,
+  locale?: Locale,
 ): ScoredRecipe {
   let totalCost = 0;
   let withDeals = 0;
@@ -633,7 +697,7 @@ function scoreOneRecipe(
     if (pantrySet.has(ing.name.toLowerCase())) continue;
     nonPantryCount++;
 
-    const result = findBestDeal(ing, dealMap, preferredStoreNames);
+    const result = findBestDeal(ing, dealMap, preferredStoreNames, locale);
     const cost = result.best
       ? computeIngredientCost(result.best, ing.quantity, recipe.servings, householdSize)
       : 0;
@@ -690,6 +754,7 @@ async function scoreAllRecipes(
   preferredStoreNames: Set<string>,
   pantrySet: Set<string>,
   householdSize: number,
+  locale?: Locale,
 ): Promise<ScoreResult> {
   const recipes = await store.getRecipes();
   if (recipes.length === 0) return { scored: [], dealMap: new Map() };
@@ -699,18 +764,19 @@ async function scoreAllRecipes(
   for (const recipe of recipes) {
     for (const ing of recipe.ingredients) {
       if (pantrySet.has(ing.name.toLowerCase())) continue;
-      for (const term of expandSearchTerms(ing.searchTerms)) {
+      for (const term of expandSearchTerms(ing.searchTerms, locale?.synonymMap)) {
         allTerms.add(term);
       }
     }
   }
 
   // Batch fetch all deals in parallel
-  const dealMap = await searchDealsBatch([...allTerms], 8);
+  const countryId = locale?.country ?? "DK";
+  const dealMap = await searchDealsBatch([...allTerms], 8, countryId);
 
   // Score each recipe
   const scored: ScoredRecipe[] = recipes.map((recipe) =>
-    scoreOneRecipe(recipe, dealMap, preferredStoreNames, pantrySet, householdSize),
+    scoreOneRecipe(recipe, dealMap, preferredStoreNames, pantrySet, householdSize, locale),
   );
 
   scored.sort((a, b) => {
@@ -723,14 +789,14 @@ async function scoreAllRecipes(
   return { scored, dealMap };
 }
 
-function formatRecipeScore(r: ScoredRecipe): string[] {
+function formatRecipeScore(r: ScoredRecipe, currency = "DKK"): string[] {
   const lines: string[] = [];
   const highConf = r.ingredients.filter((i) => i.confidence === "high");
   const lowConf = r.ingredients.filter((i) => i.confidence === "low");
   const noDealItems = r.ingredients.filter((i) => i.confidence === "none");
 
   lines.push(
-    `## ${r.name} — ${Math.round(r.estimatedCost)} DKK (deals on ${r.dealCoverage}% of ingredients)`,
+    `## ${r.name} — ${Math.round(r.estimatedCost)} ${currency} (deals on ${r.dealCoverage}% of ingredients)`,
   );
   lines.push(`   ${r.complexity} | ${r.cuisineType} | ${r.proteinType} | ${r.servings} servings`);
   if (highConf.length > 0) {
@@ -739,7 +805,7 @@ function formatRecipeScore(r: ScoredRecipe): string[] {
       const deal = i.bestDeal;
       if (!deal) continue;
       lines.push(
-        `     ${i.name} (${i.quantity}): ${deal.heading} — ${Math.round(deal.price)} DKK @ ${deal.store}`,
+        `     ${i.name} (${i.quantity}): ${deal.heading} — ${Math.round(deal.price)} ${currency} @ ${deal.store}`,
       );
     }
   }
@@ -749,12 +815,14 @@ function formatRecipeScore(r: ScoredRecipe): string[] {
       const deal = i.bestDeal;
       if (!deal) continue;
       lines.push(
-        `     ${i.name} (${i.quantity}): ${deal.heading} — ${Math.round(deal.price)} DKK @ ${deal.store} [low confidence]`,
+        `     ${i.name} (${i.quantity}): ${deal.heading} — ${Math.round(deal.price)} ${currency} @ ${deal.store} [low confidence]`,
       );
       if (i.candidates && i.candidates.length > 1) {
         lines.push(`       Other candidates:`);
         for (const c of i.candidates.slice(1)) {
-          lines.push(`         - ${c.heading} — ${c.price} DKK @ ${c.store} (score: ${c.score})`);
+          lines.push(
+            `         - ${c.heading} — ${c.price} ${currency} @ ${c.store} (score: ${c.score})`,
+          );
         }
       }
     }
@@ -766,12 +834,12 @@ function formatRecipeScore(r: ScoredRecipe): string[] {
   return lines;
 }
 
-function formatScoredRecipes(scored: ScoredRecipe[]): string {
+function formatScoredRecipes(scored: ScoredRecipe[], currency = "DKK"): string {
   if (scored.length === 0) return "No recipes to score. Add recipes first.";
 
   const lines: string[] = [];
   for (const r of scored) {
-    lines.push(...formatRecipeScore(r));
+    lines.push(...formatRecipeScore(r, currency));
   }
   return lines.join("\n");
 }
@@ -833,16 +901,18 @@ server.tool(
   }) => {
     try {
       const household = await store.getHousehold();
+      const locale = getLocale(household.country);
+      const cur = locale.currency;
       const pantry = await store.getPantry();
       const pantrySet = new Set(pantry.map((p) => p.toLowerCase()));
       const preferredStores = new Set(household.stores.map((s) => s.name));
 
       const householdSize = household.people.length || household.defaultServings;
-      const { scored } = await scoreAllRecipes(preferredStores, pantrySet, householdSize);
+      const { scored } = await scoreAllRecipes(preferredStores, pantrySet, householdSize, locale);
       const parts: string[] = [];
 
       parts.push(`# Recipe scores (${scored.length} recipes)\n`);
-      parts.push(formatScoredRecipes(scored));
+      parts.push(formatScoredRecipes(scored, cur));
 
       if (optimize && scored.length >= days) {
         parts.push(`\n# Optimized ${days}-day plan\n`);
@@ -855,18 +925,19 @@ server.tool(
           allowProteinOnDays,
           slowOnlyOnDays,
           preferCuisines,
+          ingredientTags: locale.ingredientTags,
         });
         if (bestPlan) {
           const basket = calculateBasketCost(bestPlan.recipes);
-          parts.push(`Total basket: ~${basket.totalCost} DKK for ${days} days`);
+          parts.push(`Total basket: ~${basket.totalCost} ${cur} for ${days} days`);
           if (basket.sharedSavings > 0) {
-            parts.push(`Shared ingredient savings: ~${basket.sharedSavings} DKK`);
+            parts.push(`Shared ingredient savings: ~${basket.sharedSavings} ${cur}`);
           }
           parts.push(`Unique items to buy: ${basket.uniqueIngredients}\n`);
           for (let i = 0; i < bestPlan.recipes.length; i++) {
             const r = bestPlan.recipes[i];
             parts.push(
-              `Day ${i + 1}: ${r.name} (~${r.estimatedCost} DKK) [${r.proteinType}, ${r.cuisineType}, ${r.complexity}]`,
+              `Day ${i + 1}: ${r.name} (~${r.estimatedCost} ${cur}) [${r.proteinType}, ${r.cuisineType}, ${r.complexity}]`,
             );
           }
         } else {
@@ -950,7 +1021,7 @@ server.tool(
   {
     date: z.string().describe("YYYY-MM-DD"),
     store: z.string(),
-    estimatedTotal: z.number().describe("DKK spent"),
+    estimatedTotal: z.number().describe("Amount spent in local currency"),
     items: z.number().describe("Items bought"),
     notes: z.string().optional().default(""),
   },
@@ -966,7 +1037,7 @@ server.tool(
       content: [
         {
           type: "text" as const,
-          text: `Logged: ${estimatedTotal} DKK at ${storeName} on ${date} (${items} items).`,
+          text: `Logged: ${estimatedTotal} kr at ${storeName} on ${date} (${items} items).`,
         },
       ],
     };
@@ -995,13 +1066,13 @@ server.tool(
     const avgPerWeek = total / weeks;
     const lines = log.map(
       (s) =>
-        `- ${s.date}: ${s.estimatedTotal} DKK @ ${s.store} (${s.items} items)${s.notes ? ` - ${s.notes}` : ""}`,
+        `- ${s.date}: ${s.estimatedTotal} kr @ ${s.store} (${s.items} items)${s.notes ? ` - ${s.notes}` : ""}`,
     );
     return {
       content: [
         {
           type: "text" as const,
-          text: `Spending (last ${weeks} weeks):\n\n${lines.join("\n")}\n\nTotal: ${total.toFixed(0)} DKK | Avg/week: ${avgPerWeek.toFixed(0)} DKK`,
+          text: `Spending (last ${weeks} weeks):\n\n${lines.join("\n")}\n\nTotal: ${total.toFixed(0)} kr | Avg/week: ${avgPerWeek.toFixed(0)} kr`,
         },
       ],
     };
@@ -1122,14 +1193,14 @@ function formatIngredientDeal(
   if (shopping) {
     const packInfo =
       shopping.packsNeeded > 1
-        ? `${shopping.packsNeeded} x ${shopping.pricePerPack} DKK`
-        : `${shopping.pricePerPack} DKK`;
+        ? `${shopping.packsNeeded} x ${shopping.pricePerPack} kr`
+        : `${shopping.pricePerPack} kr`;
     const leftoverInfo =
       shopping.leftover > 0
         ? ` (${formatQuantity(shopping.leftover, shopping.unitNeeded)} leftover)`
         : "";
     return {
-      line: `${ing.name}: need ${displayQty} -> ${packInfo} = ${shopping.totalCost} DKK [${formatQuantity(shopping.packSize, shopping.unitNeeded)}/pack${shopping.unitPrice ? `, ${shopping.unitPrice}` : ""}]${leftoverInfo} -- ${best.heading} @ ${storeName} until ${validTo}${expiry}${conf}`,
+      line: `${ing.name}: need ${displayQty} -> ${packInfo} = ${shopping.totalCost} kr [${formatQuantity(shopping.packSize, shopping.unitNeeded)}/pack${shopping.unitPrice ? `, ${shopping.unitPrice}` : ""}]${leftoverInfo} -- ${best.heading} @ ${storeName} until ${validTo}${expiry}${conf}`,
       cost: shopping.totalCost,
     };
   }
@@ -1150,6 +1221,7 @@ async function buildShoppingList(
   const pantry = excludePantry ? await store.getPantry() : [];
   const pantrySet = new Set(pantry.map((p) => p.toLowerCase()));
   const household = await store.getHousehold();
+  const locale = getLocale(household.country);
   const preferredStores = new Set(household.stores.map((s) => s.name));
 
   const allIngredients = collectIngredients(selectedRecipes, pantrySet);
@@ -1164,9 +1236,10 @@ async function buildShoppingList(
   } else {
     const allSearchTerms = new Set<string>();
     for (const [, ing] of allIngredients) {
-      for (const term of expandSearchTerms(ing.searchTerms)) allSearchTerms.add(term);
+      for (const term of expandSearchTerms(ing.searchTerms, locale.synonymMap))
+        allSearchTerms.add(term);
     }
-    dealMap = await searchDealsBatch([...allSearchTerms], 8);
+    dealMap = await searchDealsBatch([...allSearchTerms], 8, locale.country);
   }
 
   const byStore = new Map<string, string[]>();
@@ -1176,7 +1249,7 @@ async function buildShoppingList(
   let grandTotal = 0;
 
   for (const [, ing] of allIngredients) {
-    const result = findBestDeal(ing, dealMap, preferredStores);
+    const result = findBestDeal(ing, dealMap, preferredStores, locale);
     const { displayQty, aggregated } = buildDisplayQuantity(ing, householdSize);
 
     if (result.best) {
@@ -1205,7 +1278,9 @@ async function buildShoppingList(
       if (result.confidence === "low" && result.candidates.length > 1) {
         const alts = result.candidates
           .slice(1)
-          .map((c) => `${c.offer.heading} - ${c.offer.price} DKK @ ${c.offer.store}`)
+          .map(
+            (c) => `${c.offer.heading} - ${c.offer.price} ${c.offer.currency} @ ${c.offer.store}`,
+          )
           .join("; ");
         uncertainItems.push(`${ing.name}: picked "${best.heading}" but also found: ${alts}`);
       }
@@ -1241,7 +1316,7 @@ function formatShoppingOutput(ctx: {
   parts.push(
     `Shopping list for: ${ctx.selectedRecipes.map((r) => r.name).join(", ")} (${ctx.householdSize} people)`,
   );
-  parts.push(`Estimated register total (deals only): ~${Math.round(ctx.grandTotal)} DKK`);
+  parts.push(`Estimated register total (deals only): ~${Math.round(ctx.grandTotal)} kr`);
   parts.push("");
 
   if (ctx.expiringWarnings.length > 0) {
@@ -1380,6 +1455,8 @@ server.tool(
   }) => {
     try {
       const household = await store.getHousehold();
+      const locale = getLocale(household.country);
+      const cur = locale.currency;
       const pantry = await store.getPantry();
       const pantrySet = new Set(pantry.map((p) => p.toLowerCase()));
       const preferredStores = new Set(household.stores.map((s) => s.name));
@@ -1389,6 +1466,7 @@ server.tool(
         preferredStores,
         pantrySet,
         householdSize,
+        locale,
       );
 
       if (scored.length < days) {
@@ -1404,6 +1482,7 @@ server.tool(
         excludeProteins,
         slowOnlyOnDays,
         preferCuisines,
+        ingredientTags: locale.ingredientTags,
       });
 
       if (!bestPlan) {
@@ -1416,16 +1495,16 @@ server.tool(
       parts.push(`# ${days}-day meal plan (${householdSize} people)\n`);
 
       const basket = calculateBasketCost(bestPlan.recipes);
-      parts.push(`Estimated basket: ~${basket.totalCost} DKK`);
+      parts.push(`Estimated basket: ~${basket.totalCost} ${cur}`);
       if (basket.sharedSavings > 0) {
-        parts.push(`Shared ingredient savings: ~${basket.sharedSavings} DKK`);
+        parts.push(`Shared ingredient savings: ~${basket.sharedSavings} ${cur}`);
       }
       parts.push("");
 
       for (let i = 0; i < bestPlan.recipes.length; i++) {
         const r = bestPlan.recipes[i];
         parts.push(
-          `Day ${i + 1}: ${r.name} (~${r.estimatedCost} DKK) [${r.proteinType}, ${r.cuisineType}, ${r.complexity}]`,
+          `Day ${i + 1}: ${r.name} (~${r.estimatedCost} ${cur}) [${r.proteinType}, ${r.cuisineType}, ${r.complexity}]`,
         );
       }
 

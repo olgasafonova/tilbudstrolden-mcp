@@ -2,6 +2,7 @@
 // Extracted for testability; used by server.ts tool handlers.
 
 import type { Offer } from "./api.js";
+import type { Locale } from "./locales.js";
 import type { Ingredient } from "./store.js";
 
 // --- Quantity parsing ---
@@ -392,12 +393,16 @@ export const SYNONYM_MAP: Record<string, string[]> = {
 };
 
 /**
- * Expand search terms with Danish synonyms for better flyer matching.
+ * Expand search terms with synonyms for better flyer matching.
+ * Uses locale-specific synonym map, falling back to DK defaults.
  */
-export function expandSearchTerms(terms: string[]): string[] {
+export function expandSearchTerms(
+  terms: string[],
+  synonymMap: Record<string, string[]> = SYNONYM_MAP,
+): string[] {
   const expanded = new Set(terms);
   for (const term of terms) {
-    const synonyms = SYNONYM_MAP[term.toLowerCase()];
+    const synonyms = synonymMap[term.toLowerCase()];
     if (synonyms) {
       for (const syn of synonyms) expanded.add(syn);
     }
@@ -416,33 +421,45 @@ const MODIFIER_PREPOSITIONS = [" i ", " med ", " og ", " på ", " til ", " fra "
  * Check if the search term appears only in a modifier position
  * (after a preposition), not as the primary product.
  */
-export function isModifierPosition(heading: string, term: string): boolean {
+export function isModifierPosition(
+  heading: string,
+  term: string,
+  prepositions: string[] = MODIFIER_PREPOSITIONS,
+): boolean {
   const idx = heading.indexOf(term);
   if (idx < 0) return false;
   // If term starts the heading, it's primary
   if (idx === 0) return false;
 
   const before = heading.slice(0, idx);
-  return MODIFIER_PREPOSITIONS.some((prep) => before.includes(prep));
+  return prepositions.some((prep) => before.includes(prep));
 }
 
 /**
  * Score how well a deal matches an ingredient for cooking.
  * Returns 0 (no match) to ~100 (perfect match).
+ * Accepts optional locale for country-specific term matching.
  */
 export function scoreDealMatch(
   offer: Offer,
   ingredient: Ingredient,
   searchTerm: string,
   preferredStores: Set<string>,
+  locale?: Locale,
 ): number {
   if (offer.price === null || offer.price <= 0) return 0;
 
   const heading = offer.heading.toLowerCase();
   const term = searchTerm.toLowerCase();
 
+  const nonIngredientInd = locale?.nonIngredientIndicators ?? NON_INGREDIENT_INDICATORS;
+  const processedInd = locale?.processedIndicators ?? PROCESSED_INDICATORS;
+  const rawInd = locale?.rawIndicators ?? RAW_INDICATORS;
+  const bundlePat = locale?.bundlePatterns ?? [" eller ", " el. "];
+  const modPrep = locale?.modifierPrepositions ?? MODIFIER_PREPOSITIONS;
+
   // Reject non-ingredient products (garden seeds, ready meals, non-food)
-  if (NON_INGREDIENT_INDICATORS.some((ind) => heading.includes(ind))) return 0;
+  if (nonIngredientInd.some((ind) => heading.includes(ind))) return 0;
 
   let score = SCORE.BASE;
 
@@ -452,11 +469,11 @@ export function scoreDealMatch(
     score += SCORE.PREFERRED_STORE_BONUS;
   }
 
-  const isBundleHeading = heading.includes(" eller ") || heading.includes(" el. ");
+  const isBundleHeading = bundlePat.some((p) => heading.includes(p));
 
   if (ingredient.category === "meat" || ingredient.category === "frozen") {
-    const isProcessed = PROCESSED_INDICATORS.some((p) => heading.includes(p));
-    const isRaw = RAW_INDICATORS.some((r) => heading.includes(r));
+    const isProcessed = processedInd.some((p) => heading.includes(p));
+    const isRaw = rawInd.some((r) => heading.includes(r));
 
     if (isProcessed && !isRaw) {
       score += SCORE.PROCESSED_PENALTY;
@@ -479,7 +496,7 @@ export function scoreDealMatch(
   if (heading.startsWith(term) || heading === term) {
     score += SCORE.EXACT_MATCH_BONUS;
   } else if (heading.includes(term)) {
-    if (isModifierPosition(heading, term)) {
+    if (isModifierPosition(heading, term, modPrep)) {
       score += SCORE.MODIFIER_PENALTY;
     } else {
       score += SCORE.PARTIAL_MATCH_BONUS;
@@ -507,14 +524,15 @@ export function findBestDeal(
   ing: { searchTerms: string[]; category: string; name: string },
   dealMap: Map<string, Offer[]>,
   preferredStores: Set<string>,
+  locale?: Locale,
 ): DealSearchResult {
   const allScored: { offer: Offer; score: number }[] = [];
-  const searchTerms = expandSearchTerms(ing.searchTerms);
+  const searchTerms = expandSearchTerms(ing.searchTerms, locale?.synonymMap);
 
   for (const term of searchTerms) {
     const offers = dealMap.get(term) ?? [];
     for (const offer of offers) {
-      const matchScore = scoreDealMatch(offer, ing as Ingredient, term, preferredStores);
+      const matchScore = scoreDealMatch(offer, ing as Ingredient, term, preferredStores, locale);
       if (matchScore < SCORE.VIABILITY_THRESHOLD) continue;
       allScored.push({ offer, score: matchScore });
     }
@@ -638,9 +656,10 @@ export const INGREDIENT_TAGS: Record<string, string[]> = {
 export function findExcludedTag(
   ingredients: ScoredIngredient[],
   exclusions: string[],
+  ingredientTags: Record<string, string[]> = INGREDIENT_TAGS,
 ): string | null {
   for (const tag of exclusions) {
-    const patterns = INGREDIENT_TAGS[tag];
+    const patterns = ingredientTags[tag];
     if (!patterns) continue;
     for (const ing of ingredients) {
       const name = ing.name.toLowerCase();
@@ -664,6 +683,8 @@ export interface VarietyConstraints {
   slowOnlyOnDays?: number[];
   /** Soft cuisine preferences: {"asian": 3} = prefer at least 3 Asian dishes. Best-effort. */
   preferCuisines?: Record<string, number>;
+  /** Locale-specific ingredient tag patterns for dietary exclusion matching */
+  ingredientTags?: Record<string, string[]>;
 }
 
 /** Compute a penalty for unmet cuisine preferences. Higher = further from target. */
@@ -698,7 +719,11 @@ function isAllowedOnDay(
       if (!exceptions?.includes(day)) return false;
     }
     // Check ingredient-level exclusion (catches bacon in "vegetarian" recipes, etc.)
-    const matchedTag = findExcludedTag(recipe.ingredients, constraints.excludeProteins);
+    const matchedTag = findExcludedTag(
+      recipe.ingredients,
+      constraints.excludeProteins,
+      constraints.ingredientTags,
+    );
     if (matchedTag && matchedTag !== recipe.proteinType) {
       const exceptions = constraints.allowProteinOnDays?.[matchedTag];
       if (!exceptions?.includes(day)) return false;
@@ -753,7 +778,7 @@ export function findOptimalWeek(
       return (hasExceptions[r.proteinType]?.length ?? 0) > 0;
     }
     // Check ingredient-level exclusion
-    const matchedTag = findExcludedTag(r.ingredients, exclusions);
+    const matchedTag = findExcludedTag(r.ingredients, exclusions, constraints.ingredientTags);
     if (matchedTag) {
       return (hasExceptions[matchedTag]?.length ?? 0) > 0;
     }

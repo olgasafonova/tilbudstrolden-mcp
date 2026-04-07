@@ -55,6 +55,11 @@ interface RawOffer {
   images: { view: string | null } | null;
 }
 
+/** Extended raw offer with optional dealer country (present in some API responses) */
+interface RawOfferWithCountry extends RawOffer {
+  dealer: { name: string; country?: { id: string } } | null;
+}
+
 function parseOffer(raw: RawOffer): Offer {
   const price = raw.pricing?.price ?? null;
   const qty = raw.quantity?.size?.from ?? null;
@@ -153,34 +158,56 @@ async function withConcurrencyLimit<T>(tasks: (() => Promise<T>)[], limit: numbe
   return results as T[];
 }
 
-// --- Danish store filter ---
+// --- Country-based store filter ---
 
-let danishDealerCache: Set<string> | null = null;
+const dealerCacheByCountry = new Map<string, Set<string>>();
 
-/** Fetch and cache all Danish dealer IDs for filtering. */
+/** Fetch and cache dealer IDs for a country (used for DK where /dealers works). */
+export async function getDealerIds(countryId = "DK"): Promise<Set<string>> {
+  const cached = dealerCacheByCountry.get(countryId);
+  if (cached) return cached;
+  const dealers = await listStores(countryId);
+  const ids = new Set(dealers.map((d) => d.id));
+  dealerCacheByCountry.set(countryId, ids);
+  return ids;
+}
+
+/** @deprecated Use getDealerIds() instead */
 export async function getDanishDealerIds(): Promise<Set<string>> {
-  if (danishDealerCache) return danishDealerCache;
-  const dealers = await listStores("DK");
-  danishDealerCache = new Set(dealers.map((d) => d.id));
-  return danishDealerCache;
+  return getDealerIds("DK");
 }
 
 /** Clear the dealer cache (for testing). */
 export function clearDealerCache(): void {
-  danishDealerCache = null;
+  dealerCacheByCountry.clear();
 }
 
-export async function searchDeals(query: string, limit = 20): Promise<Offer[]> {
-  // Request extra to compensate for filtering non-Danish results
+export async function searchDeals(query: string, limit = 20, countryId = "DK"): Promise<Offer[]> {
+  // Request extra to compensate for filtering non-matching results
   const params = new URLSearchParams({
     query,
     limit: String(limit * 3),
+    country_id: countryId,
   });
   const raw = await fetchJson<RawOffer[]>(`${BASE_URL}/offers/search?${params}`);
-  const danishIds = await getDanishDealerIds();
+
+  if (countryId === "DK") {
+    // DK: /dealers endpoint works, use allow-list for best accuracy
+    const dealerIds = await getDealerIds("DK");
+    return raw
+      .map(parseOffer)
+      .filter((o) => dealerIds.has(o.storeId))
+      .slice(0, limit);
+  }
+
+  // NO/SE: /dealers endpoint ignores country_id, so filter by dealer.country
+  // from the raw response instead
   return raw
+    .filter((o) => {
+      const dc = (o as RawOfferWithCountry).dealer?.country?.id;
+      return !dc || dc === countryId;
+    })
     .map(parseOffer)
-    .filter((o) => danishIds.has(o.storeId))
     .slice(0, limit);
 }
 
@@ -200,10 +227,11 @@ export async function getStoreOffers(dealerId: string, limit = 50): Promise<Offe
 export async function searchDealsBatch(
   queries: string[],
   limit = 5,
+  countryId = "DK",
 ): Promise<Map<string, Offer[]>> {
   const unique = [...new Set(queries)];
   const tasks = unique.map((q) => async () => {
-    const offers = await searchDeals(q, limit);
+    const offers = await searchDeals(q, limit, countryId);
     return [q, offers] as const;
   });
 

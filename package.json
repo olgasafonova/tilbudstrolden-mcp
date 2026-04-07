@@ -1,8 +1,8 @@
 {
   "name": "tilbudstrolden-mcp",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "type": "module",
-  "description": "MCP server for Danish grocery deal hunting. Search offers, score recipes against current deals, and generate optimized shopping lists.",
+  "description": "MCP server for Nordic grocery deal hunting (Denmark, Norway, Sweden). Search offers, score recipes against current deals, and generate optimized shopping lists.",
   "author": "Olga Safonova",
   "license": "MIT",
   "repository": {

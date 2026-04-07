@@ -11,3 +11,6 @@ CLAUDE.md
 .beads/
 AGENTS.md
 *.db
+
+# Beads / Dolt files (added by bd init)
+.beads-credential-key
