@@ -333,7 +333,7 @@ npm test             # run tests (Vitest)
 ## Requirements
 
 - Node.js 18 or later
-- No API keys needed (etilbudsavis.dk is a public API)
+- No API keys needed. All deal data comes from the [etilbudsavis.dk](https://etilbudsavis.dk) (Tjek) public API, which covers Denmark, Norway, and Sweden from a single endpoint.
 
 ## Credits
 
