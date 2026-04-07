@@ -464,8 +464,17 @@ export function scoreDealMatch(
   let score = SCORE.BASE;
 
   // Hard-exclude non-preferred stores when preferences are configured
+  // Case-insensitive: API returns "føtex" but users type "Føtex" or "Foetex"
   if (preferredStores.size > 0) {
-    if (!preferredStores.has(offer.store)) return 0;
+    const offerStoreLower = offer.store.toLowerCase();
+    let storeMatch = false;
+    for (const ps of preferredStores) {
+      if (ps.toLowerCase() === offerStoreLower) {
+        storeMatch = true;
+        break;
+      }
+    }
+    if (!storeMatch) return 0;
     score += SCORE.PREFERRED_STORE_BONUS;
   }
 

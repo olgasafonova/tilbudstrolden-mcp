@@ -6,10 +6,7 @@
  * country switching, broken API endpoints, edge cases.
  */
 
-import fs from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import type { Offer } from "./api.js";
 import { type CountryCode, getLocale, isValidCountry, SUPPORTED_COUNTRIES } from "./locales.js";
@@ -19,7 +16,6 @@ import {
   findExcludedTag,
   SCORE,
   type ScoredIngredient,
-  type ScoredRecipe,
   scoreDealMatch,
 } from "./scoring.js";
 import type { Ingredient } from "./store.js";
@@ -254,9 +250,9 @@ describe("Scenario: User switches country", () => {
     const no = getLocale("NO");
     const knownStores = no.knownStores;
     // "netto" doesn't exist in Norway
-    expect(knownStores["netto"]).toBeUndefined();
+    expect(knownStores.netto).toBeUndefined();
     // "føtex" doesn't exist in Norway
-    expect(knownStores["føtex"]).toBeUndefined();
+    expect(knownStores.føtex).toBeUndefined();
   });
 
   it("recipes with Danish search terms score poorly in NO/SE", () => {
@@ -502,10 +498,7 @@ describe("Scenario: Bundle offers per locale", () => {
 
   it("detects 'eller' bundles in Norwegian", () => {
     const no = getLocale("NO");
-    const offer = makeOffer({ heading: "Pizza eller taco", currency: "NOK" });
-    const ing = makeIngredient({ searchTerms: ["pizza"], category: "other" });
-    // "pizza" is in non-ingredient list for NO, so this gets 0
-    // Let's use a non-blocked term
+    // "pizza" is in non-ingredient list for NO, so use a non-blocked term
     const offer2 = makeOffer({ heading: "Ost eller yoghurt", currency: "NOK" });
     const ing2 = makeIngredient({ searchTerms: ["ost"], category: "dairy" });
     const bundleScore = scoreDealMatch(offer2, ing2, "ost", preferredStores, no);
@@ -540,6 +533,23 @@ describe("Scenario: Bundle offers per locale", () => {
 // ============================================================
 
 describe("Scenario: Preferred store filtering per country", () => {
+  it("matches stores case-insensitively (issue #1)", () => {
+    const dk = getLocale("DK");
+    // User types "Føtex" but API returns "føtex"
+    const preferredStores = new Set(["Føtex"]);
+    const offer = makeOffer({ heading: "Hakket oksekød", store: "føtex" });
+    const ing = makeIngredient({ searchTerms: ["oksekød"], category: "meat" });
+    expect(scoreDealMatch(offer, ing, "oksekød", preferredStores, dk)).toBeGreaterThan(0);
+  });
+
+  it("matches REMA 1000 regardless of casing", () => {
+    const dk = getLocale("DK");
+    const preferredStores = new Set(["rema 1000"]);
+    const offer = makeOffer({ heading: "Hakket oksekød", store: "REMA 1000" });
+    const ing = makeIngredient({ searchTerms: ["oksekød"], category: "meat" });
+    expect(scoreDealMatch(offer, ing, "oksekød", preferredStores, dk)).toBeGreaterThan(0);
+  });
+
   it("excludes non-preferred stores in DK", () => {
     const dk = getLocale("DK");
     const preferredStores = new Set(["Netto"]);

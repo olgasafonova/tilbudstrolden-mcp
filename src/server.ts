@@ -3,18 +3,8 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import type { Offer } from "./api.js";
-import {
-  getStoreOffers,
-  listStores,
-  searchDeals,
-  searchDealsBatch,
-} from "./api.js";
-import {
-  getLocale,
-  isValidCountry,
-  type Locale,
-  SUPPORTED_COUNTRIES,
-} from "./locales.js";
+import { getStoreOffers, listStores, searchDeals, searchDealsBatch } from "./api.js";
+import { getLocale, isValidCountry, type Locale, SUPPORTED_COUNTRIES } from "./locales.js";
 import {
   aggregateQuantities,
   calculateBasketCost,
@@ -176,11 +166,7 @@ server.tool(
       .describe(
         "Search term in local language, e.g. 'hakket oksekød' (DK), 'kjøttdeig' (NO), 'köttfärs' (SE)",
       ),
-    limit: z
-      .number()
-      .optional()
-      .default(20)
-      .describe("Max results (default 20)"),
+    limit: z.number().optional().default(20).describe("Max results (default 20)"),
   },
   async ({ query, limit }) => {
     try {
@@ -195,9 +181,7 @@ server.tool(
         ],
       };
     } catch (err) {
-      return errorResult(
-        `Failed to search deals: ${err instanceof Error ? err.message : err}`,
-      );
+      return errorResult(`Failed to search deals: ${err instanceof Error ? err.message : err}`);
     }
   },
 );
@@ -217,8 +201,7 @@ server.tool(
     try {
       const locale = await getActiveLocale();
       const knownStores = getKnownStores(locale);
-      const dealerId =
-        knownStores[storeName.trim().toLowerCase()] ?? storeName.trim();
+      const dealerId = knownStores[storeName.trim().toLowerCase()] ?? storeName.trim();
       const offers = await getStoreOffers(dealerId, limit);
       const name = offers[0]?.store ?? storeName;
       return {
@@ -230,9 +213,7 @@ server.tool(
         ],
       };
     } catch (err) {
-      return errorResult(
-        `Failed to get store offers: ${err instanceof Error ? err.message : err}`,
-      );
+      return errorResult(`Failed to get store offers: ${err instanceof Error ? err.message : err}`);
     }
   },
 );
@@ -242,11 +223,7 @@ server.tool(
   "List grocery chains with dealer IDs for your country (DK/NO/SE). USE WHEN: finding store IDs for get_store_offers or setting up household preferred stores via update_household. NOT FOR: seeing deals (use search_deals or deals_this_week). Returns store names and dealer IDs. Full directory available for DK; NO/SE show curated grocery chains.",
   {
     query: z.string().optional().describe("Filter by name"),
-    all: z
-      .boolean()
-      .optional()
-      .default(false)
-      .describe("Include non-grocery stores too"),
+    all: z.boolean().optional().default(false).describe("Include non-grocery stores too"),
   },
   async ({ query, all }) => {
     try {
@@ -315,9 +292,7 @@ server.tool(
           for (const n of names.slice(1)) aliasKeys.add(n);
         }
       }
-      let entries = Object.entries(knownStores).filter(
-        ([key]) => !aliasKeys.has(key),
-      );
+      let entries = Object.entries(knownStores).filter(([key]) => !aliasKeys.has(key));
       if (query) {
         const q = query.toLowerCase();
         entries = entries.filter(([key]) => key.includes(q));
@@ -332,9 +307,7 @@ server.tool(
         ],
       };
     } catch (err) {
-      return errorResult(
-        `Failed to list stores: ${err instanceof Error ? err.message : err}`,
-      );
+      return errorResult(`Failed to list stores: ${err instanceof Error ? err.message : err}`);
     }
   },
 );
@@ -343,11 +316,7 @@ server.tool(
   "deals_this_week",
   "Show the best current deals from your preferred stores. USE WHEN: browsing what's cheap this week, deciding what to cook based on deals ('what's on sale?'). NOT FOR: searching for a specific product (use search_deals). Requires household stores to be configured via update_household.",
   {
-    limit: z
-      .number()
-      .optional()
-      .default(30)
-      .describe("Max deals per store (default 30)"),
+    limit: z.number().optional().default(30).describe("Max deals per store (default 30)"),
   },
   async ({ limit }) => {
     try {
@@ -374,9 +343,7 @@ server.tool(
       );
 
       const parts: string[] = [];
-      parts.push(
-        `# Deals this week from ${household.stores.length} preferred stores\n`,
-      );
+      parts.push(`# Deals this week from ${household.stores.length} preferred stores\n`);
 
       for (const { store: s, offers, error } of storeResults) {
         if (error) {
@@ -384,9 +351,7 @@ server.tool(
           continue;
         }
 
-        const expiringSoon = offers.filter(
-          (o) => daysUntilExpiry(o.validUntil) <= 2,
-        );
+        const expiringSoon = offers.filter((o) => daysUntilExpiry(o.validUntil) <= 2);
 
         parts.push(`## ${s.name} (${offers.length} offers)`);
         if (expiringSoon.length > 0) {
@@ -420,9 +385,7 @@ server.tool(
         content: [{ type: "text" as const, text: parts.join("\n") }],
       };
     } catch (err) {
-      return errorResult(
-        `Failed to fetch deals: ${err instanceof Error ? err.message : err}`,
-      );
+      return errorResult(`Failed to fetch deals: ${err instanceof Error ? err.message : err}`);
     }
   },
 );
@@ -454,10 +417,7 @@ Then run plan_and_shop to get a meal plan with shopping list!`,
       };
     }
     const people = household.people.map((p) => {
-      const diet =
-        p.dietaryRestrictions.length > 0
-          ? p.dietaryRestrictions.join(", ")
-          : "none";
+      const diet = p.dietaryRestrictions.length > 0 ? p.dietaryRestrictions.join(", ") : "none";
       const days = Object.entries(p.defaultSchedule)
         .filter(([, home]) => home)
         .map(([day]) => day)
@@ -492,9 +452,7 @@ server.tool(
       .array(
         z.object({
           name: z.string().describe("Name"),
-          dietaryRestrictions: z
-            .array(z.string())
-            .describe("e.g. 'no pork', 'lactose-free'"),
+          dietaryRestrictions: z.array(z.string()).describe("e.g. 'no pork', 'lactose-free'"),
           defaultSchedule: z
             .record(z.string(), z.boolean())
             .describe("Days at home, e.g. {monday: true}. Omitted = true."),
@@ -561,16 +519,8 @@ server.tool(
   "update_pantry",
   "Add or remove pantry items (excluded from shopping lists). USE WHEN: updating stock after shopping or noting staples you always have. Items are matched case-insensitively. Returns updated pantry item list.",
   {
-    add: z
-      .array(z.string())
-      .optional()
-      .default([])
-      .describe("Items to add to pantry"),
-    remove: z
-      .array(z.string())
-      .optional()
-      .default([])
-      .describe("Items to remove from pantry"),
+    add: z.array(z.string()).optional().default([]).describe("Items to add to pantry"),
+    remove: z.array(z.string()).optional().default([]).describe("Items to remove from pantry"),
   },
   async ({ add, remove }) => {
     const pantry = await store.updatePantry(add, remove);
@@ -660,9 +610,7 @@ server.tool(
       .enum(["quick", "medium", "slow"])
       .describe("quick (<30min), medium (30-60min), slow (60min+)"),
     cuisineType: z.string().describe("e.g. asian, danish, italian, mexican"),
-    proteinType: z
-      .string()
-      .describe("e.g. chicken, beef, pork, fish, vegetarian"),
+    proteinType: z.string().describe("e.g. chicken, beef, pork, fish, vegetarian"),
     ingredients: z
       .array(
         z.object({
@@ -671,35 +619,22 @@ server.tool(
           searchTerms: z
             .array(z.string())
             .optional()
-            .describe(
-              "Danish deal search terms. Defaults to [name] if omitted.",
-            ),
+            .describe("Danish deal search terms. Defaults to [name] if omitted."),
           category: z
             .string()
             .optional()
-            .describe(
-              "meat|dairy|produce|bakery|frozen|pantry|drinks|other. Defaults to 'other'.",
-            ),
+            .describe("meat|dairy|produce|bakery|frozen|pantry|drinks|other. Defaults to 'other'."),
         }),
       )
       .describe("Ingredients"),
   },
-  async ({
-    name,
-    servings,
-    complexity,
-    cuisineType,
-    proteinType,
-    ingredients,
-  }) => {
+  async ({ name, servings, complexity, cuisineType, proteinType, ingredients }) => {
     // Apply defaults for optional fields
     const resolvedIngredients = ingredients.map((ing) => ({
       name: ing.name,
       quantity: ing.quantity,
       searchTerms:
-        ing.searchTerms && ing.searchTerms.length > 0
-          ? ing.searchTerms
-          : [ing.name.toLowerCase()],
+        ing.searchTerms && ing.searchTerms.length > 0 ? ing.searchTerms : [ing.name.toLowerCase()],
       category: ing.category || "other",
     }));
 
@@ -734,9 +669,7 @@ server.tool(
       content: [
         {
           type: "text" as const,
-          text: removed
-            ? `Recipe "${name}" removed.`
-            : `Recipe "${name}" not found.`,
+          text: removed ? `Recipe "${name}" removed.` : `Recipe "${name}" not found.`,
         },
       ],
     };
@@ -766,12 +699,7 @@ function scoreOneRecipe(
 
     const result = findBestDeal(ing, dealMap, preferredStoreNames, locale);
     const cost = result.best
-      ? computeIngredientCost(
-          result.best,
-          ing.quantity,
-          recipe.servings,
-          householdSize,
-        )
+      ? computeIngredientCost(result.best, ing.quantity, recipe.servings, householdSize)
       : 0;
 
     const candidates: DealCandidate[] | undefined =
@@ -812,8 +740,7 @@ function scoreOneRecipe(
     proteinType: recipe.proteinType,
     cuisineType: recipe.cuisineType,
     estimatedCost: Math.round(totalCost * 100) / 100,
-    dealCoverage:
-      nonPantryCount > 0 ? Math.round((withDeals / nonPantryCount) * 100) : 100,
+    dealCoverage: nonPantryCount > 0 ? Math.round((withDeals / nonPantryCount) * 100) : 100,
     ingredients,
   };
 }
@@ -837,10 +764,7 @@ async function scoreAllRecipes(
   for (const recipe of recipes) {
     for (const ing of recipe.ingredients) {
       if (pantrySet.has(ing.name.toLowerCase())) continue;
-      for (const term of expandSearchTerms(
-        ing.searchTerms,
-        locale?.synonymMap,
-      )) {
+      for (const term of expandSearchTerms(ing.searchTerms, locale?.synonymMap)) {
         allTerms.add(term);
       }
     }
@@ -852,20 +776,12 @@ async function scoreAllRecipes(
 
   // Score each recipe
   const scored: ScoredRecipe[] = recipes.map((recipe) =>
-    scoreOneRecipe(
-      recipe,
-      dealMap,
-      preferredStoreNames,
-      pantrySet,
-      householdSize,
-      locale,
-    ),
+    scoreOneRecipe(recipe, dealMap, preferredStoreNames, pantrySet, householdSize, locale),
   );
 
   scored.sort((a, b) => {
     // Primary: higher deal coverage is better
-    if (b.dealCoverage !== a.dealCoverage)
-      return b.dealCoverage - a.dealCoverage;
+    if (b.dealCoverage !== a.dealCoverage) return b.dealCoverage - a.dealCoverage;
     // Secondary: lower cost is better
     return a.estimatedCost - b.estimatedCost;
   });
@@ -882,9 +798,7 @@ function formatRecipeScore(r: ScoredRecipe, currency = "DKK"): string[] {
   lines.push(
     `## ${r.name} — ${Math.round(r.estimatedCost)} ${currency} (deals on ${r.dealCoverage}% of ingredients)`,
   );
-  lines.push(
-    `   ${r.complexity} | ${r.cuisineType} | ${r.proteinType} | ${r.servings} servings`,
-  );
+  lines.push(`   ${r.complexity} | ${r.cuisineType} | ${r.proteinType} | ${r.servings} servings`);
   if (highConf.length > 0) {
     lines.push(`   Deals:`);
     for (const i of highConf) {
@@ -914,9 +828,7 @@ function formatRecipeScore(r: ScoredRecipe, currency = "DKK"): string[] {
     }
   }
   if (noDealItems.length > 0) {
-    lines.push(
-      `   No deals: ${noDealItems.map((i) => `${i.name} (${i.quantity})`).join(", ")}`,
-    );
+    lines.push(`   No deals: ${noDealItems.map((i) => `${i.name} (${i.quantity})`).join(", ")}`);
   }
   lines.push("");
   return lines;
@@ -936,11 +848,7 @@ server.tool(
   "score_recipes",
   "Score all saved recipes against current deals, optionally optimize a weekly meal plan. USE WHEN: deciding what to cook based on current deals ('what's cheapest this week'), comparing recipe costs. NOT FOR: generating a shopping list (use generate_shopping_list or plan_and_shop). Shows deal coverage %, estimated cost, and confidence levels per ingredient.",
   {
-    optimize: z
-      .boolean()
-      .optional()
-      .default(false)
-      .describe("Also generate optimal weekly plan"),
+    optimize: z.boolean().optional().default(false).describe("Also generate optimal weekly plan"),
     days: z.number().optional().default(7).describe("Days to plan (default 7)"),
     maxPerProtein: z
       .number()
@@ -972,9 +880,7 @@ server.tool(
     slowOnlyOnDays: z
       .array(z.number())
       .optional()
-      .describe(
-        "Restrict slow recipes to these days only (1-indexed). E.g. [6, 7] for weekends",
-      ),
+      .describe("Restrict slow recipes to these days only (1-indexed). E.g. [6, 7] for weekends"),
     preferCuisines: z
       .record(z.string(), z.number())
       .optional()
@@ -1001,14 +907,8 @@ server.tool(
       const pantrySet = new Set(pantry.map((p) => p.toLowerCase()));
       const preferredStores = new Set(household.stores.map((s) => s.name));
 
-      const householdSize =
-        household.people.length || household.defaultServings;
-      const { scored } = await scoreAllRecipes(
-        preferredStores,
-        pantrySet,
-        householdSize,
-        locale,
-      );
+      const householdSize = household.people.length || household.defaultServings;
+      const { scored } = await scoreAllRecipes(preferredStores, pantrySet, householdSize, locale);
       const parts: string[] = [];
 
       parts.push(`# Recipe scores (${scored.length} recipes)\n`);
@@ -1029,13 +929,9 @@ server.tool(
         });
         if (bestPlan) {
           const basket = calculateBasketCost(bestPlan.recipes);
-          parts.push(
-            `Total basket: ~${basket.totalCost} ${cur} for ${days} days`,
-          );
+          parts.push(`Total basket: ~${basket.totalCost} ${cur} for ${days} days`);
           if (basket.sharedSavings > 0) {
-            parts.push(
-              `Shared ingredient savings: ~${basket.sharedSavings} ${cur}`,
-            );
+            parts.push(`Shared ingredient savings: ~${basket.sharedSavings} ${cur}`);
           }
           parts.push(`Unique items to buy: ${basket.uniqueIngredients}\n`);
           for (let i = 0; i < bestPlan.recipes.length; i++) {
@@ -1055,9 +951,7 @@ server.tool(
         content: [{ type: "text" as const, text: parts.join("\n") }],
       };
     } catch (err) {
-      return errorResult(
-        `Failed to score recipes: ${err instanceof Error ? err.message : err}`,
-      );
+      return errorResult(`Failed to score recipes: ${err instanceof Error ? err.message : err}`);
     }
   },
 );
@@ -1105,9 +999,7 @@ server.tool(
         ],
       };
     }
-    const lines = history.map(
-      (m) => `- ${m.date}: ${m.recipe} (${m.people.join(", ")})`,
-    );
+    const lines = history.map((m) => `- ${m.date}: ${m.recipe} (${m.people.join(", ")})`);
     return {
       content: [
         {
@@ -1258,8 +1150,7 @@ function buildDisplayQuantity(
       .map((c) => {
         const p = parseQuantity(c.quantity);
         if (!p) return c.quantity;
-        const scale =
-          c.recipeServings > 0 ? householdSize / c.recipeServings : 1;
+        const scale = c.recipeServings > 0 ? householdSize / c.recipeServings : 1;
         return formatQuantity(Math.round(p.amount * scale), p.unit);
       })
       .join(" + ");
@@ -1288,11 +1179,7 @@ function formatIngredientDeal(
   const expiry = expiryTag(best.validUntil);
 
   let shopping = aggregated
-    ? computeShoppingCostFromTotal(
-        best,
-        aggregated.totalAmount,
-        aggregated.unit,
-      )
+    ? computeShoppingCostFromTotal(best, aggregated.totalAmount, aggregated.unit)
     : null;
   if (!shopping) {
     shopping = computeShoppingCost(
@@ -1392,18 +1279,13 @@ async function buildShoppingList(
         const alts = result.candidates
           .slice(1)
           .map(
-            (c) =>
-              `${c.offer.heading} - ${c.offer.price} ${c.offer.currency} @ ${c.offer.store}`,
+            (c) => `${c.offer.heading} - ${c.offer.price} ${c.offer.currency} @ ${c.offer.store}`,
           )
           .join("; ");
-        uncertainItems.push(
-          `${ing.name}: picked "${best.heading}" but also found: ${alts}`,
-        );
+        uncertainItems.push(`${ing.name}: picked "${best.heading}" but also found: ${alts}`);
       }
     } else {
-      regularPrice.push(
-        `${ing.name} (${displayQty}) [${ing.fromRecipes.join(", ")}]`,
-      );
+      regularPrice.push(`${ing.name} (${displayQty}) [${ing.fromRecipes.join(", ")}]`);
     }
   }
 
@@ -1434,9 +1316,7 @@ function formatShoppingOutput(ctx: {
   parts.push(
     `Shopping list for: ${ctx.selectedRecipes.map((r) => r.name).join(", ")} (${ctx.householdSize} people)`,
   );
-  parts.push(
-    `Estimated register total (deals only): ~${Math.round(ctx.grandTotal)} kr`,
-  );
+  parts.push(`Estimated register total (deals only): ~${Math.round(ctx.grandTotal)} kr`);
   parts.push("");
 
   if (ctx.expiringWarnings.length > 0) {
@@ -1482,10 +1362,7 @@ server.tool(
   "Deal-optimized shopping list from specific recipes, grouped by store. USE WHEN: preparing to shop for chosen recipes ('shopping list for Bolognese and Chili'). Aggregates quantities across recipes, computes pack sizes, flags expiring deals. NOT FOR: deciding what to cook (use score_recipes or plan_and_shop first). Requires recipes to exist (see add_recipe).",
   {
     recipes: z.array(z.string()).describe("Recipe names"),
-    people: z
-      .number()
-      .optional()
-      .describe("Household size (overrides stored household config)"),
+    people: z.number().optional().describe("Household size (overrides stored household config)"),
     excludePantry: z
       .boolean()
       .optional()
@@ -1513,8 +1390,7 @@ server.tool(
       }
 
       const household = await store.getHousehold();
-      const householdSize =
-        people ?? (household.people.length || household.defaultServings);
+      const householdSize = people ?? (household.people.length || household.defaultServings);
 
       const text = await buildShoppingList(
         selectedRecipes,
@@ -1542,10 +1418,7 @@ server.tool(
   "Score recipes, optimize a weekly meal plan, and generate a shopping list in one step. USE WHEN: 'plan my week', 'what should we eat?', 'make a meal plan with shopping list'. This is the main entry point for weekly dinner planning. NOT FOR: shopping for specific pre-chosen recipes (use generate_shopping_list). Returns meal plan (day-by-day with costs) followed by deal-optimized shopping list grouped by store.",
   {
     days: z.number().optional().default(7).describe("Days to plan (default 7)"),
-    people: z
-      .number()
-      .optional()
-      .describe("Household size (overrides stored config)"),
+    people: z.number().optional().describe("Household size (overrides stored config)"),
     maxPerProtein: z
       .number()
       .optional()
@@ -1556,17 +1429,11 @@ server.tool(
       .optional()
       .default(2)
       .describe("Max same cuisine in plan (default 2)"),
-    maxSlowDays: z
-      .number()
-      .optional()
-      .default(2)
-      .describe("Max slow-cook days (default 2)"),
+    maxSlowDays: z.number().optional().default(2).describe("Max slow-cook days (default 2)"),
     excludeProteins: z
       .array(z.string())
       .optional()
-      .describe(
-        'Dietary exclusions, e.g. ["pork", "dairy"]. Also scans ingredient names.',
-      ),
+      .describe('Dietary exclusions, e.g. ["pork", "dairy"]. Also scans ingredient names.'),
     slowOnlyOnDays: z
       .array(z.number())
       .optional()
@@ -1574,9 +1441,7 @@ server.tool(
     preferCuisines: z
       .record(z.string(), z.number())
       .optional()
-      .describe(
-        'Soft cuisine preferences: {"asian": 3} = prefer at least 3 Asian dishes',
-      ),
+      .describe('Soft cuisine preferences: {"asian": 3} = prefer at least 3 Asian dishes'),
   },
   async ({
     days,
@@ -1595,8 +1460,7 @@ server.tool(
       const pantry = await store.getPantry();
       const pantrySet = new Set(pantry.map((p) => p.toLowerCase()));
       const preferredStores = new Set(household.stores.map((s) => s.name));
-      const householdSize =
-        people ?? (household.people.length || household.defaultServings);
+      const householdSize = people ?? (household.people.length || household.defaultServings);
 
       const { scored, dealMap: cachedDeals } = await scoreAllRecipes(
         preferredStores,
@@ -1633,9 +1497,7 @@ server.tool(
       const basket = calculateBasketCost(bestPlan.recipes);
       parts.push(`Estimated basket: ~${basket.totalCost} ${cur}`);
       if (basket.sharedSavings > 0) {
-        parts.push(
-          `Shared ingredient savings: ~${basket.sharedSavings} ${cur}`,
-        );
+        parts.push(`Shared ingredient savings: ~${basket.sharedSavings} ${cur}`);
       }
       parts.push("");
 
@@ -1649,26 +1511,18 @@ server.tool(
       // Generate shopping list for the planned recipes
       const allRecipes = await store.getRecipes();
       const plannedRecipes = allRecipes.filter((r) =>
-        bestPlan.recipes.some(
-          (p) => p.name.toLowerCase() === r.name.toLowerCase(),
-        ),
+        bestPlan.recipes.some((p) => p.name.toLowerCase() === r.name.toLowerCase()),
       );
 
       parts.push("\n---\n");
-      const shoppingList = await buildShoppingList(
-        plannedRecipes,
-        householdSize,
-        cachedDeals,
-      );
+      const shoppingList = await buildShoppingList(plannedRecipes, householdSize, cachedDeals);
       parts.push(shoppingList);
 
       return {
         content: [{ type: "text" as const, text: parts.join("\n") }],
       };
     } catch (err) {
-      return errorResult(
-        `Failed to plan: ${err instanceof Error ? err.message : err}`,
-      );
+      return errorResult(`Failed to plan: ${err instanceof Error ? err.message : err}`);
     }
   },
 );
@@ -1680,9 +1534,7 @@ server.tool(
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error(
-    `TilbudsTrolden MCP server v${SERVER_VERSION} running on stdio`,
-  );
+  console.error(`TilbudsTrolden MCP server v${SERVER_VERSION} running on stdio`);
 }
 
 main().catch((err) => {

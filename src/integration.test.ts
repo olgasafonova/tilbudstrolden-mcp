@@ -461,7 +461,7 @@ describe("findBestDeal with locale", () => {
 // ============================================================
 
 describe("Meal plan optimization across locales", () => {
-  function makeRecipeSet(locale: ReturnType<typeof getLocale>): ScoredRecipe[] {
+  function makeRecipeSet(_locale: ReturnType<typeof getLocale>): ScoredRecipe[] {
     // Create a diverse set of 8 recipes for testing
     return [
       makeScoredRecipe({
