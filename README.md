@@ -341,6 +341,19 @@ Deal data fetched via the [etilbudsavis.dk](https://etilbudsavis.dk) (Tjek) API.
 
 Starter recipe ingredient lists adapted from [valdemarsro.dk](https://valdemarsro.dk). Uncle Roger recipes from [Nigel Ng's YouTube](https://www.youtube.com/@mrnigelng) ([Egg Fried Rice](https://www.youtube.com/watch?v=SGBP3sG3a9Y), [Adobo](https://www.youtube.com/watch?v=KKpWGnkO3e4)). Bulgogi recipe from [Maangchi](https://www.maangchi.com/recipe/bulgogi). Swedish family recipes from [jarfors.com](https://jarfors.com/recipe) by [Mikael Jarfors](https://www.linkedin.com/in/mikael-jarfors/).
 
+## More MCP Servers
+
+Check out my other MCP servers:
+
+| Server | Description | Stars |
+|--------|-------------|-------|
+| [gleif-mcp-server](https://github.com/olgasafonova/gleif-mcp-server) | Access GLEIF LEI database. Look up company identities, verify legal entities. | ![GitHub stars](https://img.shields.io/github/stars/olgasafonova/gleif-mcp-server?style=flat) |
+| [mediawiki-mcp-server](https://github.com/olgasafonova/mediawiki-mcp-server) | Connect AI to any MediaWiki wiki. Search, read, edit wiki content. | ![GitHub stars](https://img.shields.io/github/stars/olgasafonova/mediawiki-mcp-server?style=flat) |
+| [miro-mcp-server](https://github.com/olgasafonova/miro-mcp-server) | Control Miro whiteboards with AI. Boards, diagrams, mindmaps, and more. | ![GitHub stars](https://img.shields.io/github/stars/olgasafonova/miro-mcp-server?style=flat) |
+| [nordic-registry-mcp-server](https://github.com/olgasafonova/nordic-registry-mcp-server) | Access Nordic business registries. Look up companies across Norway, Denmark, Sweden. | ![GitHub stars](https://img.shields.io/github/stars/olgasafonova/nordic-registry-mcp-server?style=flat) |
+| [productplan-mcp-server](https://github.com/olgasafonova/productplan-mcp-server) | Talk to your ProductPlan roadmaps. Query OKRs, ideas, launches. | ![GitHub stars](https://img.shields.io/github/stars/olgasafonova/productplan-mcp-server?style=flat) |
+| [mcp-servercard-go](https://github.com/olgasafonova/mcp-servercard-go) | Go library for SEP-2127 Server Cards. Pre-connect discovery for MCP servers. | ![GitHub stars](https://img.shields.io/github/stars/olgasafonova/mcp-servercard-go?style=flat) |
+
 ## License
 
 [MIT](LICENSE)
