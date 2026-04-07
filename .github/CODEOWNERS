@@ -1,0 +1,3 @@
+# Require owner approval for CI/CD changes
+.github/workflows/ @olgasafonova
+.github/CODEOWNERS @olgasafonova
