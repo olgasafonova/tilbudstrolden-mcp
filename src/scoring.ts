@@ -12,7 +12,7 @@ export interface ParsedQuantity {
   unit: string; // normalized: "g", "ml", "stk", or original if unknown
 }
 
-/** Multipliers to convert common Danish units to base units (g or ml). */
+/** Multipliers to convert common SI/retail units to base units (g or ml). */
 const UNIT_CONVERSIONS: Record<string, { base: string; factor: number }> = {
   g: { base: "g", factor: 1 },
   kg: { base: "g", factor: 1000 },

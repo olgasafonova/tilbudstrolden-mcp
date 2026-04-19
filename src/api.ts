@@ -60,19 +60,31 @@ interface RawOfferWithCountry extends RawOffer {
   dealer: { name: string; country?: { id: string } } | null;
 }
 
+const CURRENCY_SYMBOLS: Record<string, string> = {
+  DKK: "kr",
+  NOK: "kr",
+  SEK: "kr",
+  EUR: "€",
+};
+
+function currencySymbol(currency: string): string {
+  return CURRENCY_SYMBOLS[currency] ?? currency;
+}
+
 function parseOffer(raw: RawOffer): Offer {
   const price = raw.pricing?.price ?? null;
   const qty = raw.quantity?.size?.from ?? null;
   const unitSymbol = raw.quantity?.unit?.symbol ?? null;
+  const sym = currencySymbol(raw.pricing?.currency ?? "DKK");
 
   let pricePerUnit: string | null = null;
   if (price !== null && qty !== null && qty > 0 && unitSymbol) {
     if (unitSymbol === "g" && qty < 1000) {
-      pricePerUnit = `${((price / qty) * 1000).toFixed(2)} kr/kg`;
+      pricePerUnit = `${((price / qty) * 1000).toFixed(2)} ${sym}/kg`;
     } else if (unitSymbol === "ml" && qty < 1000) {
-      pricePerUnit = `${((price / qty) * 1000).toFixed(2)} kr/L`;
+      pricePerUnit = `${((price / qty) * 1000).toFixed(2)} ${sym}/L`;
     } else {
-      pricePerUnit = `${(price / qty).toFixed(2)} kr/${unitSymbol}`;
+      pricePerUnit = `${(price / qty).toFixed(2)} ${sym}/${unitSymbol}`;
     }
   }
 
@@ -80,7 +92,7 @@ function parseOffer(raw: RawOffer): Offer {
   if (price !== null && !pricePerUnit) {
     const pieces = raw.quantity?.pieces?.from ?? null;
     if (pieces !== null && pieces > 0) {
-      pricePerUnit = `${(price / pieces).toFixed(2)} kr/pcs`;
+      pricePerUnit = `${(price / pieces).toFixed(2)} ${sym}/pcs`;
     }
   }
 

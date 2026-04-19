@@ -99,7 +99,7 @@ server.prompt(
           type: "text" as const,
           text: `Help me set up TilbudsTrolden for meal planning. Walk me through these steps:
 
-1. Set my country (DK, NO, or SE) and household (who lives here, dietary restrictions) using update_household
+1. Set my country (DK, NO, SE, or FI) and household (who lives here, dietary restrictions) using update_household
 2. Configure preferred stores (use list_stores to find IDs, then update_household)
 3. Add my pantry staples using update_pantry (things I always have: salt, pepper, oil, etc.)
 4. Add a few recipes using add_recipe
@@ -1033,11 +1033,13 @@ server.tool(
       items,
       notes,
     });
+    const household = await store.getHousehold();
+    const sym = getLocale(household.country).currencySymbol;
     return {
       content: [
         {
           type: "text" as const,
-          text: `Logged: ${estimatedTotal} kr at ${storeName} on ${date} (${items} items).`,
+          text: `Logged: ${estimatedTotal} ${sym} at ${storeName} on ${date} (${items} items).`,
         },
       ],
     };
@@ -1064,15 +1066,17 @@ server.tool(
     }
     const total = log.reduce((sum, s) => sum + s.estimatedTotal, 0);
     const avgPerWeek = total / weeks;
+    const household = await store.getHousehold();
+    const sym = getLocale(household.country).currencySymbol;
     const lines = log.map(
       (s) =>
-        `- ${s.date}: ${s.estimatedTotal} kr @ ${s.store} (${s.items} items)${s.notes ? ` - ${s.notes}` : ""}`,
+        `- ${s.date}: ${s.estimatedTotal} ${sym} @ ${s.store} (${s.items} items)${s.notes ? ` - ${s.notes}` : ""}`,
     );
     return {
       content: [
         {
           type: "text" as const,
-          text: `Spending (last ${weeks} weeks):\n\n${lines.join("\n")}\n\nTotal: ${total.toFixed(0)} kr | Avg/week: ${avgPerWeek.toFixed(0)} kr`,
+          text: `Spending (last ${weeks} weeks):\n\n${lines.join("\n")}\n\nTotal: ${total.toFixed(0)} ${sym} | Avg/week: ${avgPerWeek.toFixed(0)} ${sym}`,
         },
       ],
     };
@@ -1172,6 +1176,7 @@ function formatIngredientDeal(
   displayQty: string,
   aggregated: ReturnType<typeof aggregateQuantities>,
   householdSize: number,
+  currencySymbol: string,
 ): { line: string; cost: number } {
   const storeName = best.store;
   const validTo = best.validUntil?.slice(0, 10) ?? "unknown";
@@ -1193,14 +1198,14 @@ function formatIngredientDeal(
   if (shopping) {
     const packInfo =
       shopping.packsNeeded > 1
-        ? `${shopping.packsNeeded} x ${shopping.pricePerPack} kr`
-        : `${shopping.pricePerPack} kr`;
+        ? `${shopping.packsNeeded} x ${shopping.pricePerPack} ${currencySymbol}`
+        : `${shopping.pricePerPack} ${currencySymbol}`;
     const leftoverInfo =
       shopping.leftover > 0
         ? ` (${formatQuantity(shopping.leftover, shopping.unitNeeded)} leftover)`
         : "";
     return {
-      line: `${ing.name}: need ${displayQty} -> ${packInfo} = ${shopping.totalCost} kr [${formatQuantity(shopping.packSize, shopping.unitNeeded)}/pack${shopping.unitPrice ? `, ${shopping.unitPrice}` : ""}]${leftoverInfo} -- ${best.heading} @ ${storeName} until ${validTo}${expiry}${conf}`,
+      line: `${ing.name}: need ${displayQty} -> ${packInfo} = ${shopping.totalCost} ${currencySymbol} [${formatQuantity(shopping.packSize, shopping.unitNeeded)}/pack${shopping.unitPrice ? `, ${shopping.unitPrice}` : ""}]${leftoverInfo} -- ${best.heading} @ ${storeName} until ${validTo}${expiry}${conf}`,
       cost: shopping.totalCost,
     };
   }
@@ -1268,6 +1273,7 @@ async function buildShoppingList(
         displayQty,
         aggregated,
         householdSize,
+        locale.currencySymbol,
       );
       grandTotal += cost;
 
@@ -1298,6 +1304,7 @@ async function buildShoppingList(
     uncertainItems,
     expiringWarnings,
     pantry,
+    currencySymbol: locale.currencySymbol,
   });
 }
 
@@ -1311,12 +1318,13 @@ function formatShoppingOutput(ctx: {
   uncertainItems: string[];
   expiringWarnings: string[];
   pantry: string[];
+  currencySymbol: string;
 }): string {
   const parts: string[] = [];
   parts.push(
     `Shopping list for: ${ctx.selectedRecipes.map((r) => r.name).join(", ")} (${ctx.householdSize} people)`,
   );
-  parts.push(`Estimated register total (deals only): ~${Math.round(ctx.grandTotal)} kr`);
+  parts.push(`Estimated register total (deals only): ~${Math.round(ctx.grandTotal)} ${ctx.currencySymbol}`);
   parts.push("");
 
   if (ctx.expiringWarnings.length > 0) {

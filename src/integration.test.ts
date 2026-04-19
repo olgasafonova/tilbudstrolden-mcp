@@ -85,8 +85,8 @@ function makeScoredIngredient(overrides: Partial<ScoredIngredient> = {}): Scored
 // ============================================================
 
 describe("Locale system", () => {
-  it("supports all three countries", () => {
-    expect(SUPPORTED_COUNTRIES).toEqual(["DK", "NO", "SE"]);
+  it("supports all four countries", () => {
+    expect(SUPPORTED_COUNTRIES).toEqual(["DK", "NO", "SE", "FI"]);
   });
 
   it("returns DK locale by default", () => {
@@ -644,6 +644,7 @@ describe("Meal plan optimization across locales", () => {
           DK: "Piskefløde",
           NO: "Kremfløte",
           SE: "Vispgrädde",
+          FI: "Vispikerma",
         };
         const recipes = [
           ...makeRecipeSet(locale),
@@ -680,6 +681,7 @@ describe("Meal plan optimization across locales", () => {
           DK: "Pasta spaghetti",
           NO: "Pasta spaghetti",
           SE: "Pasta spaghetti",
+          FI: "Pasta spagetti",
         };
         const ingredients = [makeScoredIngredient({ name: glutenNames[code] })];
         expect(

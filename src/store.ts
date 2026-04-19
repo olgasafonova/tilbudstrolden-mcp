@@ -24,7 +24,7 @@ export interface Household {
   people: Person[];
   stores: StorePreference[];
   defaultServings: number;
-  country: string; // "DK", "NO", "SE"
+  country: string; // "DK", "NO", "SE", "FI"
 }
 
 export interface Ingredient {
@@ -256,7 +256,7 @@ export async function getRecipes(): Promise<Recipe[]> {
   const data = await load();
   if (data.recipes.length === 0 && data.household.country === "DK") {
     // Seed default recipes on first use for DK households only.
-    // Default recipes use Danish search terms and won't match NO/SE offers.
+    // Default recipes use Danish search terms and won't match NO/SE/FI offers.
     const seeded = await modify((s) => {
       if (s.recipes.length === 0 && s.household.country === "DK") {
         s.recipes = [...defaultRecipes];

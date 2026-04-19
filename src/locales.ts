@@ -1,13 +1,13 @@
 // Country-specific locale data for deal scoring and product matching.
 // Each locale provides language-specific indicators, synonyms, and store maps.
 
-export type CountryCode = "DK" | "NO" | "SE";
+export type CountryCode = "DK" | "NO" | "SE" | "FI";
 
 export interface Locale {
   country: CountryCode;
   countryName: string;
   currency: string;
-  /** Currency symbol for display (kr, kr, kr — all Scandinavian) */
+  /** Currency symbol for display (kr for Scandinavian, € for EUR) */
   currencySymbol: string;
   /** Processed food indicators — matched against offer headings */
   processedIndicators: string[];
@@ -509,10 +509,172 @@ const se: Locale = {
 };
 
 // ============================================================
+// Finnish (FI)
+// ============================================================
+
+const fi: Locale = {
+  country: "FI",
+  countryName: "Finland",
+  currency: "EUR",
+  currencySymbol: "€",
+
+  processedIndicators: [
+    "savustettu",
+    "marinoitu",
+    "marinoidut",
+    "grillattu",
+    "paneroitu",
+    "paneroidut",
+    "säilyke",
+    "leikkele",
+    "makkara",
+    "grillimakkara",
+    "nakki",
+    "nakit",
+    "pekoni",
+    "maksamakkara",
+    "maksapasteija",
+    "pasteija",
+    "kuivattu",
+    "suolattu",
+  ],
+
+  rawIndicators: [
+    "jauheliha",
+    "kokonainen",
+    "tuore",
+    "pakaste",
+    "pakastettu",
+    "raaka",
+    "filee",
+    "fileet",
+    "fileepalat",
+    "suikaleet",
+    "paistisuikale",
+    "kuutiot",
+    "siivut",
+    "rinta",
+    "rintafilee",
+    "reisi",
+    "koivet",
+    "siivet",
+    "palat",
+  ],
+
+  nonIngredientIndicators: [
+    "siemenet,",
+    "siemenet ",
+    "kukkasipulit",
+    "piirakka",
+    "munakas",
+    "laatikko",
+    "lihaperunasoselaatikko",
+    "valmisruoka",
+    "einesruoka",
+    "snack pot",
+    "instant ",
+    "vaseliini",
+    "shampoo",
+    "saippua",
+    "astianpesu",
+    "virvoitusjuoma",
+    "energiajuoma",
+    "pizza",
+    "koiranruoka",
+    "kissanruoka",
+    "kissan ",
+    "koiran ",
+  ],
+
+  modifierPrepositions: [" ja ", " tai ", " kanssa ", " sekä "],
+
+  synonymMap: {
+    sianliha: ["possu", "possunliha"],
+    jauheliha: ["naudanjauheliha", "sianjauheliha", "sekajauheliha"],
+    sianjauheliha: ["possun jauheliha"],
+    naudanliha: ["nauta", "häränliha"],
+    naudanjauheliha: ["jauheliha"],
+    kana: ["broileri", "kananpoika"],
+    kananrinta: ["kananrintafilee", "kana"],
+    kananfilee: ["kananpoika", "broileri"],
+    katkarapu: ["katkaravut"],
+    lohi: ["lohifilee"],
+  },
+
+  ingredientTags: {
+    pork: [
+      "pekoni",
+      "chorizo",
+      "makkara",
+      "nakki",
+      "nakit",
+      "sianliha",
+      "possu",
+      "kassler",
+      "kinkku",
+      "siankylki",
+      "porsaankylki",
+    ],
+    beef: ["naudanliha", "häränliha", "nauta", "naudanjauheliha", "biffi"],
+    lamb: ["lammas", "lampaanliha", "karitsa", "karitsanliha"],
+    fish: ["lohi", "kala", "turska", "seiti", "tonnikala", "silli", "siika", "kuha"],
+    shellfish: ["katkarapu", "katkaravut", "sinisimpukka", "simpukat"],
+    dairy: [
+      "maito",
+      "kerma",
+      "vispikerma",
+      "voi",
+      "juusto",
+      "parmesan",
+      "mozzarella",
+      "ranskankerma",
+      "jogurtti",
+      "smetana",
+    ],
+    gluten: [
+      "jauho",
+      "vehnäjauho",
+      "pasta",
+      "spagetti",
+      "nuudelit",
+      "leipä",
+      "ruisleipä",
+      "lasagnelevyt",
+      "tortilla",
+    ],
+    beans: ["pavut", "kidneypavut", "linssit", "kikherneet"],
+    nuts: ["cashewpähkinät", "mantelit", "maapähkinät", "pähkinät", "hasselpähkinät"],
+    egg: ["kananmuna", "muna"],
+  },
+
+  knownStores: {
+    "s-market": "d8ccs8",
+    smarket: "d8ccs8",
+    "k-market": "9c56Y8",
+    kmarket: "9c56Y8",
+    "k-supermarket": "f305U8",
+    ksupermarket: "f305U8",
+    "k-citymarket": "38d088",
+    kcitymarket: "38d088",
+    prisma: "8d54jU",
+    lidl: "a402E8",
+    tokmanni: "6160z8",
+    alepa: "6fe6F8",
+    sale: "1503Q8",
+    halpahalli: "QCpc2i",
+    minimani: "xboX5K",
+    saiturinpörssi: "5MyDvM",
+    saiturinporssi: "5MyDvM",
+  },
+
+  bundlePatterns: [" tai ", " sekä "],
+};
+
+// ============================================================
 // Registry
 // ============================================================
 
-const LOCALES: Record<CountryCode, Locale> = { DK: dk, NO: no, SE: se };
+const LOCALES: Record<CountryCode, Locale> = { DK: dk, NO: no, SE: se, FI: fi };
 
 export function getLocale(country: string): Locale {
   const code = country.toUpperCase() as CountryCode;
@@ -523,4 +685,4 @@ export function isValidCountry(country: string): country is CountryCode {
   return country.toUpperCase() in LOCALES;
 }
 
-export const SUPPORTED_COUNTRIES: CountryCode[] = ["DK", "NO", "SE"];
+export const SUPPORTED_COUNTRIES: CountryCode[] = ["DK", "NO", "SE", "FI"];

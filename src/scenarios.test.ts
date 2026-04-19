@@ -212,19 +212,21 @@ describe("Scenario: Cross-country offer leakage", () => {
 describe("Scenario: Currency display", () => {
   it("each locale has distinct currency code", () => {
     const currencies = SUPPORTED_COUNTRIES.map((c) => getLocale(c).currency);
-    expect(new Set(currencies).size).toBe(3);
+    expect(new Set(currencies).size).toBe(SUPPORTED_COUNTRIES.length);
   });
 
-  it("all locales use kr as symbol (Scandinavian convention)", () => {
-    for (const code of SUPPORTED_COUNTRIES) {
+  it("Scandinavian locales use kr as symbol; FI uses €", () => {
+    const scandinavian: CountryCode[] = ["DK", "NO", "SE"];
+    for (const code of scandinavian) {
       expect(getLocale(code).currencySymbol).toBe("kr");
     }
+    expect(getLocale("FI").currencySymbol).toBe("€");
   });
 
   it("offer currency field should match locale currency", () => {
     // Verify that when the API returns offers for a country,
     // the currency field matches expectations
-    const expected: Record<CountryCode, string> = { DK: "DKK", NO: "NOK", SE: "SEK" };
+    const expected: Record<CountryCode, string> = { DK: "DKK", NO: "NOK", SE: "SEK", FI: "EUR" };
     for (const code of SUPPORTED_COUNTRIES) {
       const locale = getLocale(code);
       expect(locale.currency).toBe(expected[code]);
@@ -337,14 +339,14 @@ describe("Scenario: Country code edge cases", () => {
   });
 
   it("rejects invalid country codes", () => {
-    expect(isValidCountry("FI")).toBe(false);
     expect(isValidCountry("DE")).toBe(false);
+    expect(isValidCountry("XX")).toBe(false);
     expect(isValidCountry("")).toBe(false);
     expect(isValidCountry("DENMARK")).toBe(false);
   });
 
   it("getLocale falls back to DK for invalid codes", () => {
-    expect(getLocale("FI").country).toBe("DK");
+    expect(getLocale("DE").country).toBe("DK");
     expect(getLocale("").country).toBe("DK");
     expect(getLocale("INVALID").country).toBe("DK");
   });
@@ -408,9 +410,10 @@ describe("Scenario: Non-food products in search results", () => {
 // ============================================================
 
 describe("Scenario: Dietary exclusions across language boundaries", () => {
-  it("'bacon' is caught as pork in all three locales", () => {
-    // Bacon is spelled the same in DK/NO/SE
-    for (const code of SUPPORTED_COUNTRIES) {
+  it("'bacon' is caught as pork in Scandinavian locales", () => {
+    // Bacon is spelled the same in DK/NO/SE; Finnish uses "pekoni"
+    const scandinavian: CountryCode[] = ["DK", "NO", "SE"];
+    for (const code of scandinavian) {
       const locale = getLocale(code);
       const ingredients = [makeScoredIngredient({ name: "Bacon" })];
       expect(
