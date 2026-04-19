@@ -533,7 +533,10 @@ describe("findBestDeal with locale", () => {
   it("Finnish offer preserves EUR currency end-to-end", () => {
     const fi = getLocale("FI");
     const dealMap = new Map<string, Offer[]>([
-      ["jauheliha", [makeOffer({ id: "fi-2", heading: "Jauheliha 400 g", price: 3.49, currency: "EUR" })]],
+      [
+        "jauheliha",
+        [makeOffer({ id: "fi-2", heading: "Jauheliha 400 g", price: 3.49, currency: "EUR" })],
+      ],
     ]);
     const ing = { name: "Jauheliha", searchTerms: ["jauheliha"], category: "meat" };
     const result = findBestDeal(ing, dealMap, new Set(), fi);

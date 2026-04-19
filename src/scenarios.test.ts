@@ -277,13 +277,7 @@ describe("Scenario: Finnish household with Prisma preference", () => {
       category: "meat",
     });
     const rawScore = scoreDealMatch(rawOffer, ing, "jauheliha", preferredStores, fi);
-    const processedScore = scoreDealMatch(
-      processedOffer,
-      ing,
-      "jauheliha",
-      preferredStores,
-      fi,
-    );
+    const processedScore = scoreDealMatch(processedOffer, ing, "jauheliha", preferredStores, fi);
     expect(rawScore).toBeGreaterThan(processedScore);
   });
 

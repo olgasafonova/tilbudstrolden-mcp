@@ -1324,7 +1324,9 @@ function formatShoppingOutput(ctx: {
   parts.push(
     `Shopping list for: ${ctx.selectedRecipes.map((r) => r.name).join(", ")} (${ctx.householdSize} people)`,
   );
-  parts.push(`Estimated register total (deals only): ~${Math.round(ctx.grandTotal)} ${ctx.currencySymbol}`);
+  parts.push(
+    `Estimated register total (deals only): ~${Math.round(ctx.grandTotal)} ${ctx.currencySymbol}`,
+  );
   parts.push("");
 
   if (ctx.expiringWarnings.length > 0) {
