@@ -339,7 +339,7 @@ npm test             # run tests (Vitest)
 ## Requirements
 
 - Node.js 18 or later
-- No API keys needed. Deal data is fetched via the [etilbudsavis.dk](https://etilbudsavis.dk) (Tjek) public API, which serves all three Nordic markets.
+- No API keys needed. Deal data is fetched via the [etilbudsavis.dk](https://etilbudsavis.dk) (Tjek) public API, which serves all four Nordic markets.
 
 ## Credits
 
