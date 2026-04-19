@@ -159,12 +159,12 @@ server.prompt(
 
 server.tool(
   "search_deals",
-  "Search grocery deals across stores by keyword. Supports Denmark (DK), Norway (NO), and Sweden (SE) based on household country setting. USE WHEN: finding specific products, checking prices, comparing stores. NOT FOR: browsing one store's catalog (use get_store_offers) or generating a shopping list (use generate_shopping_list). Returns deals sorted by relevance with unit prices.",
+  "Search grocery deals across stores by keyword. Supports Denmark (DK), Norway (NO), Sweden (SE), and Finland (FI) based on household country setting. USE WHEN: finding specific products, checking prices, comparing stores. NOT FOR: browsing one store's catalog (use get_store_offers) or generating a shopping list (use generate_shopping_list). Returns deals sorted by relevance with unit prices.",
   {
     query: z
       .string()
       .describe(
-        "Search term in local language, e.g. 'hakket oksekød' (DK), 'kjøttdeig' (NO), 'köttfärs' (SE)",
+        "Search term in local language, e.g. 'hakket oksekød' (DK), 'kjøttdeig' (NO), 'köttfärs' (SE), 'jauheliha' (FI)",
       ),
     limit: z.number().optional().default(20).describe("Max results (default 20)"),
   },
@@ -220,7 +220,7 @@ server.tool(
 
 server.tool(
   "list_stores",
-  "List grocery chains with dealer IDs for your country (DK/NO/SE). USE WHEN: finding store IDs for get_store_offers or setting up household preferred stores via update_household. NOT FOR: seeing deals (use search_deals or deals_this_week). Returns store names and dealer IDs. Full directory available for DK; NO/SE show curated grocery chains.",
+  "List grocery chains with dealer IDs for your country (DK/NO/SE/FI). USE WHEN: finding store IDs for get_store_offers or setting up household preferred stores via update_household. NOT FOR: seeing deals (use search_deals or deals_this_week). Returns store names and dealer IDs. Full directory available for DK; NO/SE/FI show curated grocery chains.",
   {
     query: z.string().optional().describe("Filter by name"),
     all: z.boolean().optional().default(false).describe("Include non-grocery stores too"),

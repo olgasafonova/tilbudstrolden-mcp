@@ -1,5 +1,5 @@
 /**
- * Integration tests for multi-country support (DK, NO, SE).
+ * Integration tests for multi-country support (DK, NO, SE, FI).
  * Tests locale system, scoring with locale terms, dietary exclusions,
  * and meal plan optimization across different household configurations.
  *
@@ -287,6 +287,42 @@ describe("Scoring with locale", () => {
     });
   });
 
+  describe("Finnish processed/raw detection", () => {
+    const fi = getLocale("FI");
+
+    it("penalizes Finnish processed meat terms", () => {
+      const offer = makeOffer({ heading: "Savustettu lohi", currency: "EUR" });
+      const ing = makeIngredient({ name: "Lohi", category: "meat", searchTerms: ["lohi"] });
+      const score = scoreDealMatch(offer, ing, "lohi", preferredStores, fi);
+      const baseScore = scoreDealMatch(
+        makeOffer({ heading: "Lohi filee", currency: "EUR" }),
+        ing,
+        "lohi",
+        preferredStores,
+        fi,
+      );
+      expect(score).toBeLessThan(baseScore);
+    });
+
+    it("gives raw bonus for Finnish raw terms", () => {
+      const offer = makeOffer({ heading: "Tuore kananrinta", currency: "EUR" });
+      const ing = makeIngredient({ name: "Kana", category: "meat", searchTerms: ["kana"] });
+      const score = scoreDealMatch(offer, ing, "kana", preferredStores, fi);
+      expect(score).toBeGreaterThan(SCORE.BASE);
+    });
+
+    it("gives raw bonus for jauheliha (ground meat)", () => {
+      const offer = makeOffer({ heading: "Atria jauheliha 400 g", currency: "EUR" });
+      const ing = makeIngredient({
+        name: "Jauheliha",
+        category: "meat",
+        searchTerms: ["jauheliha"],
+      });
+      const score = scoreDealMatch(offer, ing, "jauheliha", preferredStores, fi);
+      expect(score).toBeGreaterThan(SCORE.BASE);
+    });
+  });
+
   describe("Non-ingredient rejection per locale", () => {
     it("rejects Danish non-food items", () => {
       const dk = getLocale("DK");
@@ -307,6 +343,20 @@ describe("Scoring with locale", () => {
       const offer = makeOffer({ heading: "Diskmedel citron" });
       const ing = makeIngredient({ searchTerms: ["citron"] });
       expect(scoreDealMatch(offer, ing, "citron", preferredStores, se)).toBe(0);
+    });
+
+    it("rejects Finnish non-food items", () => {
+      const fi = getLocale("FI");
+      const offer = makeOffer({ heading: "Shampoo sitruuna" });
+      const ing = makeIngredient({ searchTerms: ["sitruuna"] });
+      expect(scoreDealMatch(offer, ing, "sitruuna", preferredStores, fi)).toBe(0);
+    });
+
+    it("rejects Finnish ready meals", () => {
+      const fi = getLocale("FI");
+      const offer = makeOffer({ heading: "Valmisruoka lihapullat" });
+      const ing = makeIngredient({ searchTerms: ["lihapullat"] });
+      expect(scoreDealMatch(offer, ing, "lihapullat", preferredStores, fi)).toBe(0);
     });
   });
 
@@ -400,6 +450,35 @@ describe("Dietary exclusions per locale", () => {
       expect(findExcludedTag(ingredients, ["egg"], se.ingredientTags)).toBe("egg");
     });
   });
+
+  describe("FI ingredient tags", () => {
+    const fi = getLocale("FI");
+
+    it("detects pork via Finnish terms (pekoni)", () => {
+      const ingredients = [makeScoredIngredient({ name: "Pekoni" })];
+      expect(findExcludedTag(ingredients, ["pork"], fi.ingredientTags)).toBe("pork");
+    });
+
+    it("detects dairy via Finnish terms", () => {
+      const ingredients = [makeScoredIngredient({ name: "Vispikerma" })];
+      expect(findExcludedTag(ingredients, ["dairy"], fi.ingredientTags)).toBe("dairy");
+    });
+
+    it("detects fish via Finnish terms", () => {
+      const ingredients = [makeScoredIngredient({ name: "Turska" })];
+      expect(findExcludedTag(ingredients, ["fish"], fi.ingredientTags)).toBe("fish");
+    });
+
+    it("detects gluten via Finnish terms", () => {
+      const ingredients = [makeScoredIngredient({ name: "Vehnäjauho" })];
+      expect(findExcludedTag(ingredients, ["gluten"], fi.ingredientTags)).toBe("gluten");
+    });
+
+    it("detects eggs via Finnish term (kananmuna)", () => {
+      const ingredients = [makeScoredIngredient({ name: "Kananmuna" })];
+      expect(findExcludedTag(ingredients, ["egg"], fi.ingredientTags)).toBe("egg");
+    });
+  });
 });
 
 // ============================================================
@@ -434,6 +513,31 @@ describe("findBestDeal with locale", () => {
     const result = findBestDeal(ing, dealMap, new Set(), se);
     expect(result.best).not.toBeNull();
     expect(result.best?.id).toBe("se-1");
+  });
+
+  it("uses Finnish synonyms to expand search", () => {
+    const fi = getLocale("FI");
+    const dealMap = new Map<string, Offer[]>([
+      [
+        "broileri",
+        [makeOffer({ id: "fi-1", heading: "Broileri fileepalat", price: 5.5, currency: "EUR" })],
+      ],
+    ]);
+    const ing = { name: "Kana", searchTerms: ["kana"], category: "meat" };
+    const result = findBestDeal(ing, dealMap, new Set(), fi);
+    // "kana" should expand to include "broileri" via FI synonyms
+    expect(result.best).not.toBeNull();
+    expect(result.best?.id).toBe("fi-1");
+  });
+
+  it("Finnish offer preserves EUR currency end-to-end", () => {
+    const fi = getLocale("FI");
+    const dealMap = new Map<string, Offer[]>([
+      ["jauheliha", [makeOffer({ id: "fi-2", heading: "Jauheliha 400 g", price: 3.49, currency: "EUR" })]],
+    ]);
+    const ing = { name: "Jauheliha", searchTerms: ["jauheliha"], category: "meat" };
+    const result = findBestDeal(ing, dealMap, new Set(), fi);
+    expect(result.best?.currency).toBe("EUR");
   });
 
   it("DK synonyms still work (backward compat)", () => {
@@ -633,6 +737,30 @@ describe("Meal plan optimization across locales", () => {
       });
       expect(plan).not.toBeNull();
       expect(plan!.recipes.every((r) => r.name !== "Ärtsoppa med Fläsk")).toBe(true);
+    });
+
+    it("works with Finnish ingredient tags", () => {
+      const fi = getLocale("FI");
+      const recipes = [
+        ...makeRecipeSet(fi),
+        makeScoredRecipe({
+          name: "Hernekeitto pekonilla",
+          proteinType: "vegetarian",
+          cuisineType: "other",
+          complexity: "medium",
+          estimatedCost: 6,
+          ingredients: [makeScoredIngredient({ name: "pekoni", category: "meat" })],
+        }),
+      ];
+      const plan = findOptimalWeek(recipes, 5, {
+        maxPerProtein: 2,
+        maxPerCuisine: 2,
+        maxSlowDays: 1,
+        excludeProteins: ["pork"],
+        ingredientTags: fi.ingredientTags,
+      });
+      expect(plan).not.toBeNull();
+      expect(plan!.recipes.every((r) => r.name !== "Hernekeitto pekonilla")).toBe(true);
     });
   });
 

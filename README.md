@@ -13,7 +13,7 @@
   <img src="assets/trolden-cooking.png" alt="TilbudsTrolden cooking up deals" width="380" />
 </p>
 
-An [MCP](https://modelcontextprotocol.io) server for Nordic grocery shopping. It finds the best deals across supermarkets in **Denmark**, **Norway**, and **Sweden**, plans your weekly dinners around what's cheap, and builds shopping lists grouped by store. You talk to your AI assistant about dinner; the troll does the legwork.
+An [MCP](https://modelcontextprotocol.io) server for Nordic grocery shopping. It finds the best deals across supermarkets in **Denmark**, **Norway**, **Sweden**, and **Finland**, plans your weekly dinners around what's cheap, and builds shopping lists grouped by store. You talk to your AI assistant about dinner; the troll does the legwork.
 
 Works with any MCP-compatible client: Claude Desktop, Claude Code, VS Code, Cursor, Windsurf, ChatGPT, and others.
 
@@ -21,11 +21,11 @@ Works with any MCP-compatible client: Claude Desktop, Claude Code, VS Code, Curs
 
 ### Deal search
 
-Search current deals across grocery chains in Denmark, Norway, and Sweden. Compare unit prices (kr/kg) side by side. Check what's on offer at a specific store, or get a combined view from all your preferred stores at once.
+Search current deals across grocery chains in Denmark, Norway, Sweden, and Finland. Compare unit prices (kr/kg for Scandinavian kroner, €/kg for Finnish euros) side by side. Check what's on offer at a specific store, or get a combined view from all your preferred stores at once.
 
 ### Recipe library
 
-Ships with 32 starter recipes (Danish households) spanning Danish, Italian, Asian, Mexican, and Swedish cuisines. Deals are matched to ingredients automatically. Add your own recipes in your local language, remove ones you don't like, or tweak the defaults. Norwegian and Swedish households start with a clean slate for adding recipes with local search terms.
+Ships with 32 starter recipes (Danish households) spanning Danish, Italian, Asian, Mexican, and Swedish cuisines. Deals are matched to ingredients automatically. Add your own recipes in your local language, remove ones you don't like, or tweak the defaults. Norwegian, Swedish, and Finnish households start with a clean slate for adding recipes with local search terms.
 
 ### Meal planning
 
@@ -37,7 +37,7 @@ Get a shopping list from any set of recipes. Shared ingredients are added up acr
 
 ### Household config
 
-Tell the assistant which country you're in (DK, NO, or SE), how many people you're cooking for, which stores you prefer, and any dietary restrictions. Everything else follows from that: deals from your stores rank higher, pork disappears if you said no pork, and shopping lists scale to your household. Country defaults to Denmark if not set.
+Tell the assistant which country you're in (DK, NO, SE, or FI), how many people you're cooking for, which stores you prefer, and any dietary restrictions. Everything else follows from that: deals from your stores rank higher, pork disappears if you said no pork, and shopping lists scale to your household. Country defaults to Denmark if not set.
 
 ### Pantry tracking
 
@@ -55,7 +55,9 @@ Record what you cooked and what you spent. The planner keeps track so you don't 
 
 **Sweden:** ICA (Maxi/Kvantum/Supermarket/Nara), Willys, Hemkop, City Gross, Coop, Stora Coop, Tempo
 
-All deal data is fetched via the [etilbudsavis.dk](https://etilbudsavis.dk) (Tjek) API, which serves flyer data for all three countries. Coverage varies; Denmark has the deepest data, followed by Sweden and Norway.
+**Finland:** S-market, K-Market, K-Supermarket, K-Citymarket, Prisma, Lidl, Tokmanni, Alepa, Sale, Halpahalli, Minimani, Saiturinpörssi
+
+All deal data is fetched via the [etilbudsavis.dk](https://etilbudsavis.dk) (Tjek) API, which serves flyer data for all four countries. Coverage varies; Denmark has the deepest data, followed by Finland, Sweden, and Norway.
 
 ## Quick start
 
@@ -181,7 +183,7 @@ TILBUDSTROLDEN_DATA=/custom/path/to/data.json
 ### Deals
 | Tool | What it does |
 |------|-------------|
-| `search_deals` | Search current offers across stores by keyword (DK/NO/SE) |
+| `search_deals` | Search current offers across stores by keyword (DK/NO/SE/FI) |
 | `get_store_offers` | List this week's offers from a specific store |
 | `deals_this_week` | Show the best deals from your preferred stores, with expiring items and biggest savings |
 | `list_stores` | List available grocery chains with dealer IDs |
@@ -190,7 +192,7 @@ TILBUDSTROLDEN_DATA=/custom/path/to/data.json
 | Tool | What it does |
 |------|-------------|
 | `get_household` | View current household config |
-| `update_household` | Set country (DK/NO/SE), household members, dietary restrictions, preferred stores, servings |
+| `update_household` | Set country (DK/NO/SE/FI), household members, dietary restrictions, preferred stores, servings |
 | `get_pantry` | View pantry contents |
 | `update_pantry` | Add or remove pantry items (excluded from shopping lists) |
 
@@ -241,6 +243,10 @@ Real examples of how you'd talk to your AI assistant with TilbudsTrolden running
 > **You:** We're 3 people, no pork, and we shop at Netto, REMA 1000, and Meny.
 
 The assistant saves your setup. From now on, deals from Netto, REMA, and Meny get priority, and pork recipes are excluded from meal plans.
+
+> **You:** Switch me to Finland. We shop at Prisma, K-Supermarket, and Lidl.
+
+Country becomes FI, stores update, and deals now come from Finnish chains. Prices show in €/kg instead of kr/kg.
 
 ### Check deals
 
@@ -307,9 +313,9 @@ No bulgogi for a while.
 
 ## How deal matching works
 
-Nordic grocery deals bundle products in creative ways ("Rejer, kold- eller varmroget laks"). TilbudsTrolden tells raw ingredients apart from processed products using language-specific food terminology for Danish, Norwegian, and Swedish. Searching for "laks" as a cooking ingredient won't match roget/rokt/rokt laks or palaeg/palegg/palagg. Your preferred stores get priority in results.
+Nordic grocery deals bundle products in creative ways ("Rejer, kold- eller varmroget laks"). TilbudsTrolden tells raw ingredients apart from processed products using language-specific food terminology for Danish, Norwegian, Swedish, and Finnish. Searching for "laks" as a cooking ingredient won't match roget/rokt/rokt laks or palaeg/palegg/palagg, and searching for "jauheliha" in Finland won't match savustettu makkara. Your preferred stores get priority in results.
 
-The scoring engine uses locale-specific indicators for each country: processed meat terms (roget/rokt/rokt), raw meat terms (fersk/fersk/farsk), non-food filters, and dietary exclusion patterns. All three languages have full coverage for pork, beef, lamb, fish, shellfish, dairy, gluten, beans, nuts, and egg exclusions.
+The scoring engine uses locale-specific indicators for each country: processed meat terms (roget/rokt/rokt/savustettu), raw meat terms (fersk/fersk/farsk/tuore), non-food filters, and dietary exclusion patterns. All four languages have full coverage for pork, beef, lamb, fish, shellfish, dairy, gluten, beans, nuts, and egg exclusions.
 
 The meal planner won't repeat the same protein or cuisine more than twice in a week, and you can restrict slow-cook recipes to specific days.
 

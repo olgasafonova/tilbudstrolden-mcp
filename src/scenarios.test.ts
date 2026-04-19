@@ -1,6 +1,6 @@
 /**
  * Live scenario tests: things that could go wrong when real users
- * interact with the MCP server across DK/NO/SE.
+ * interact with the MCP server across DK/NO/SE/FI.
  *
  * Covers data migration, cross-country leakage, currency mixing,
  * country switching, broken API endpoints, edge cases.
@@ -202,6 +202,117 @@ describe("Scenario: Cross-country offer leakage", () => {
     const no = getLocale("NO");
     // REMA 1000 exists in both countries with different IDs
     expect(dk.knownStores["rema 1000"]).not.toBe(no.knownStores["rema 1000"]);
+  });
+});
+
+// ============================================================
+// Scenario: Finnish household end-to-end
+// ============================================================
+
+describe("Scenario: Finnish household with Prisma preference", () => {
+  const fi = getLocale("FI");
+  const preferredStores = new Set(["Prisma"]);
+
+  it("finds best deal for Finnish ground meat at preferred Prisma", () => {
+    const prismaOffer = makeOffer({
+      id: "fi-prisma-1",
+      heading: "Atria naudan jauheliha 400 g",
+      currency: "EUR",
+      store: "Prisma",
+      price: 4.29,
+    });
+    const lidlOffer = makeOffer({
+      id: "fi-lidl-1",
+      heading: "Lidl naudan jauheliha 400 g",
+      currency: "EUR",
+      store: "Lidl",
+      price: 3.99,
+    });
+    const dealMap = new Map<string, Offer[]>([["jauheliha", [lidlOffer, prismaOffer]]]);
+    const ing = makeIngredient({
+      name: "Jauheliha",
+      searchTerms: ["jauheliha"],
+      category: "meat",
+    });
+    const result = findBestDeal(ing, dealMap, preferredStores, fi);
+    // Preferred store wins even when cheaper offer exists elsewhere
+    expect(result.best?.store).toBe("Prisma");
+    expect(result.best?.currency).toBe("EUR");
+  });
+
+  it("expands kana -> broileri via Finnish synonyms", () => {
+    const dealMap = new Map<string, Offer[]>([
+      [
+        "broileri",
+        [
+          makeOffer({
+            id: "fi-br",
+            heading: "Broileri fileepalat 500 g",
+            currency: "EUR",
+            store: "Prisma",
+            price: 5.99,
+          }),
+        ],
+      ],
+    ]);
+    const ing = makeIngredient({ name: "Kana", searchTerms: ["kana"], category: "meat" });
+    const result = findBestDeal(ing, dealMap, preferredStores, fi);
+    expect(result.best?.id).toBe("fi-br");
+  });
+
+  it("prefers raw jauheliha over processed makkara", () => {
+    const rawOffer = makeOffer({
+      heading: "Atria jauheliha 400 g",
+      currency: "EUR",
+      store: "Prisma",
+    });
+    const processedOffer = makeOffer({
+      heading: "Atria grillimakkara 400 g",
+      currency: "EUR",
+      store: "Prisma",
+    });
+    const ing = makeIngredient({
+      name: "Jauheliha",
+      searchTerms: ["jauheliha"],
+      category: "meat",
+    });
+    const rawScore = scoreDealMatch(rawOffer, ing, "jauheliha", preferredStores, fi);
+    const processedScore = scoreDealMatch(
+      processedOffer,
+      ing,
+      "jauheliha",
+      preferredStores,
+      fi,
+    );
+    expect(rawScore).toBeGreaterThan(processedScore);
+  });
+
+  it("rejects Finnish ready meal (valmisruoka)", () => {
+    const offer = makeOffer({
+      heading: "Valmisruoka lihapullat 350 g",
+      currency: "EUR",
+      store: "Prisma",
+    });
+    const ing = makeIngredient({
+      name: "Liha",
+      searchTerms: ["liha"],
+      category: "meat",
+    });
+    expect(scoreDealMatch(offer, ing, "liha", preferredStores, fi)).toBe(0);
+  });
+
+  it("filters out non-preferred Finnish chains when Prisma configured", () => {
+    const tokmanniOffer = makeOffer({
+      heading: "Jauheliha 400 g",
+      currency: "EUR",
+      store: "Tokmanni",
+    });
+    const ing = makeIngredient({
+      name: "Jauheliha",
+      searchTerms: ["jauheliha"],
+      category: "meat",
+    });
+    expect(scoreDealMatch(tokmanniOffer, ing, "jauheliha", preferredStores, fi)).toBe(0);
   });
 });
 
@@ -423,7 +534,7 @@ describe("Scenario: Dietary exclusions across language boundaries", () => {
     }
   });
 
-  it("'chorizo' is caught as pork in all three locales", () => {
+  it("'chorizo' is caught as pork in all supported locales", () => {
     for (const code of SUPPORTED_COUNTRIES) {
       const locale = getLocale(code);
       const ingredients = [makeScoredIngredient({ name: "Chorizo" })];
@@ -434,7 +545,7 @@ describe("Scenario: Dietary exclusions across language boundaries", () => {
     }
   });
 
-  it("'parmesan' is caught as dairy in all three locales", () => {
+  it("'parmesan' is caught as dairy in all supported locales", () => {
     for (const code of SUPPORTED_COUNTRIES) {
       const locale = getLocale(code);
       const ingredients = [makeScoredIngredient({ name: "Parmesan" })];
@@ -445,7 +556,7 @@ describe("Scenario: Dietary exclusions across language boundaries", () => {
     }
   });
 
-  it("'mozzarella' is caught as dairy in all three locales", () => {
+  it("'mozzarella' is caught as dairy in all supported locales", () => {
     for (const code of SUPPORTED_COUNTRIES) {
       const locale = getLocale(code);
       const ingredients = [makeScoredIngredient({ name: "Mozzarella" })];
@@ -767,6 +878,13 @@ describe("Scenario: Known store IDs are valid", () => {
     const se = getLocale("SE");
     for (const [name, id] of Object.entries(se.knownStores)) {
       expect(id.length, `SE store "${name}" has empty ID`).toBeGreaterThan(0);
+    }
+  });
+
+  it("FI store IDs are non-empty strings", () => {
+    const fi = getLocale("FI");
+    for (const [name, id] of Object.entries(fi.knownStores)) {
+      expect(id.length, `FI store "${name}" has empty ID`).toBeGreaterThan(0);
     }
   });
 
