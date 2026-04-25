@@ -1,0 +1,82 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-04-25T16:30:00Z",
+  "deslop_version": "2.1.2",
+  "scores": {
+    "file_health": 75.0,
+    "test_coverage": 20.0,
+    "secret_detection": 100.0,
+    "todo_debt": 100.0,
+    "dependency_health": 100.0,
+    "structural_quality": 100.0,
+    "overall": 82.5
+  },
+  "findings": [
+    {
+      "detector": "file_health",
+      "severity": "critical",
+      "key": "src/default-recipes.ts",
+      "summary": "src/default-recipes.ts (2,370 LOC; data file, zero functions)"
+    },
+    {
+      "detector": "file_health",
+      "severity": "critical",
+      "key": "src/server.ts",
+      "summary": "src/server.ts (1,553 LOC; MCP server entry — real bloat)"
+    },
+    {
+      "detector": "file_health",
+      "severity": "high",
+      "key": "src/integration.test.ts",
+      "summary": "src/integration.test.ts (992 LOC; integration test suite)"
+    },
+    {
+      "detector": "file_health",
+      "severity": "high",
+      "key": "src/scenarios.test.ts",
+      "summary": "src/scenarios.test.ts (929 LOC)"
+    },
+    {
+      "detector": "file_health",
+      "severity": "high",
+      "key": "src/scoring.test.ts",
+      "summary": "src/scoring.test.ts (911 LOC)"
+    },
+    {
+      "detector": "file_health",
+      "severity": "high",
+      "key": "src/scoring.ts",
+      "summary": "src/scoring.ts (989 LOC; scoring algorithm — real)"
+    },
+    {
+      "detector": "file_health",
+      "severity": "warning",
+      "key": "src/locales.ts",
+      "summary": "src/locales.ts (688 LOC; locale data + 2 helpers)"
+    },
+    {
+      "detector": "test_coverage",
+      "severity": "warning",
+      "key": "src/api.ts",
+      "summary": "src/api.ts has no matching test file (3 funcs; possibly covered by integration.test.ts)"
+    },
+    {
+      "detector": "test_coverage",
+      "severity": "warning",
+      "key": "src/locales.ts",
+      "summary": "src/locales.ts has no matching test file (2 funcs)"
+    },
+    {
+      "detector": "test_coverage",
+      "severity": "warning",
+      "key": "src/server.ts",
+      "summary": "src/server.ts has no matching test file (13 funcs; covered by integration.test.ts and scenarios.test.ts in practice)"
+    },
+    {
+      "detector": "test_coverage",
+      "severity": "warning",
+      "key": "src/store.ts",
+      "summary": "src/store.ts has no matching test file (3 funcs; possibly covered by integration.test.ts)"
+    }
+  ]
+}
