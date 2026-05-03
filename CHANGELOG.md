@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.5.1] - 2026-05-03
+
+### Added
+
+- **Server-level `instructions` field on the MCP `initialize` response.** Connecting agents now receive a brief overview, country support notes, tool-group index, common-query examples, and caveats up front, instead of having to infer the server's purpose from individual tool descriptions. No tool behavior changes; this is purely additive at the protocol layer.
+
+### Fixed
+
+- Stale inline comment in `src/api.ts`: the `/dealers` post-hoc-filter branch listed `NO/SE` as the affected countries, but Finland goes through the same code path. Comment now reads `NO/SE/FI`. No behavior change.
+
 ## [0.5.0] - 2026-04-19
 
 ### Added
@@ -36,5 +46,6 @@ Finnish dealer IDs were not hand-coded. Each of the 12 chains was probed against
 
 Initial public release. Danish-only deal search, recipe library, meal planning, shopping list generation, pantry, and spend tracking via the etilbudsavis.dk API.
 
+[0.5.1]: https://github.com/olgasafonova/tilbudstrolden-mcp/releases/tag/v0.5.1
 [0.5.0]: https://github.com/olgasafonova/tilbudstrolden-mcp/releases/tag/v0.5.0
 [0.4.0]: https://github.com/olgasafonova/tilbudstrolden-mcp/releases/tag/v0.4.0
