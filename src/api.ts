@@ -149,10 +149,7 @@ async function fetchJson<T>(url: string): Promise<T> {
 }
 
 // Simple concurrency limiter for batch operations
-async function withConcurrencyLimit<T>(
-  tasks: (() => Promise<T>)[],
-  limit: number,
-): Promise<T[]> {
+async function withConcurrencyLimit<T>(tasks: (() => Promise<T>)[], limit: number): Promise<T[]> {
   const results: (T | undefined)[] = new Array(tasks.length);
   const executing: Set<Promise<void>> = new Set();
 
@@ -197,20 +194,14 @@ export function clearDealerCache(): void {
   dealerCacheByCountry.clear();
 }
 
-export async function searchDeals(
-  query: string,
-  limit = 20,
-  countryId = "DK",
-): Promise<Offer[]> {
+export async function searchDeals(query: string, limit = 20, countryId = "DK"): Promise<Offer[]> {
   // Request extra to compensate for filtering non-matching results
   const params = new URLSearchParams({
     query,
     limit: String(limit * 3),
     country_id: countryId,
   });
-  const raw = await fetchJson<RawOffer[]>(
-    `${BASE_URL}/offers/search?${params}`,
-  );
+  const raw = await fetchJson<RawOffer[]>(`${BASE_URL}/offers/search?${params}`);
 
   if (countryId === "DK") {
     // DK: /dealers endpoint works, use allow-list for best accuracy
@@ -232,10 +223,7 @@ export async function searchDeals(
     .slice(0, limit);
 }
 
-export async function getStoreOffers(
-  dealerId: string,
-  limit = 50,
-): Promise<Offer[]> {
+export async function getStoreOffers(dealerId: string, limit = 50): Promise<Offer[]> {
   const params = new URLSearchParams({
     dealer_id: dealerId,
     limit: String(limit),

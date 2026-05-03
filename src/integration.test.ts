@@ -22,6 +22,12 @@ import {
 } from "./scoring.js";
 import type { Ingredient } from "./store.js";
 
+function assertNotNull<T>(value: T | null, message = "Expected non-null"): asserts value is T {
+  if (value === null) {
+    throw new Error(message);
+  }
+}
+
 // --- Helpers ---
 
 function makeOffer(overrides: Partial<Offer> = {}): Offer {
@@ -646,8 +652,8 @@ describe("Meal plan optimization across locales", () => {
         maxPerCuisine: 2,
         maxSlowDays: 1,
       });
-      expect(plan).not.toBeNull();
-      expect(plan!.recipes.length).toBe(5);
+      assertNotNull(plan);
+      expect(plan.recipes.length).toBe(5);
     });
   });
 
@@ -662,8 +668,8 @@ describe("Meal plan optimization across locales", () => {
         excludeProteins: ["pork"],
         ingredientTags: dk.ingredientTags,
       });
-      expect(plan).not.toBeNull();
-      expect(plan!.recipes.every((r) => r.proteinType !== "pork")).toBe(true);
+      assertNotNull(plan);
+      expect(plan.recipes.every((r) => r.proteinType !== "pork")).toBe(true);
     });
 
     it("catches hidden pork in ingredient names", () => {
@@ -689,9 +695,9 @@ describe("Meal plan optimization across locales", () => {
         excludeProteins: ["pork"],
         ingredientTags: dk.ingredientTags,
       });
-      expect(plan).not.toBeNull();
+      assertNotNull(plan);
       // "Veggie Soup with Bacon" should be excluded despite proteinType=vegetarian
-      expect(plan!.recipes.every((r) => r.name !== "Veggie Soup with Bacon")).toBe(true);
+      expect(plan.recipes.every((r) => r.name !== "Veggie Soup with Bacon")).toBe(true);
     });
 
     it("works with Norwegian ingredient tags", () => {
@@ -714,8 +720,8 @@ describe("Meal plan optimization across locales", () => {
         excludeProteins: ["pork"],
         ingredientTags: no.ingredientTags,
       });
-      expect(plan).not.toBeNull();
-      expect(plan!.recipes.every((r) => r.name !== "Ertestuing med Bacon")).toBe(true);
+      assertNotNull(plan);
+      expect(plan.recipes.every((r) => r.name !== "Ertestuing med Bacon")).toBe(true);
     });
 
     it("works with Swedish ingredient tags", () => {
@@ -738,8 +744,8 @@ describe("Meal plan optimization across locales", () => {
         excludeProteins: ["pork"],
         ingredientTags: se.ingredientTags,
       });
-      expect(plan).not.toBeNull();
-      expect(plan!.recipes.every((r) => r.name !== "Ärtsoppa med Fläsk")).toBe(true);
+      assertNotNull(plan);
+      expect(plan.recipes.every((r) => r.name !== "Ärtsoppa med Fläsk")).toBe(true);
     });
 
     it("works with Finnish ingredient tags", () => {
@@ -762,8 +768,8 @@ describe("Meal plan optimization across locales", () => {
         excludeProteins: ["pork"],
         ingredientTags: fi.ingredientTags,
       });
-      expect(plan).not.toBeNull();
-      expect(plan!.recipes.every((r) => r.name !== "Hernekeitto pekonilla")).toBe(true);
+      assertNotNull(plan);
+      expect(plan.recipes.every((r) => r.name !== "Hernekeitto pekonilla")).toBe(true);
     });
   });
 
@@ -795,9 +801,9 @@ describe("Meal plan optimization across locales", () => {
           excludeProteins: ["dairy"],
           ingredientTags: locale.ingredientTags,
         });
-        expect(plan).not.toBeNull();
+        assertNotNull(plan);
         expect(
-          plan!.recipes.every((r) => r.name !== `Cream Sauce (${code})`),
+          plan.recipes.every((r) => r.name !== `Cream Sauce (${code})`),
           `${code}: cream sauce should be excluded`,
         ).toBe(true);
       }
@@ -835,10 +841,10 @@ describe("Meal plan optimization across locales", () => {
         allowProteinOnDays: { pork: [3] }, // allow pork on day 3 only
         ingredientTags: dk.ingredientTags,
       });
-      expect(plan).not.toBeNull();
+      assertNotNull(plan);
       // If pork appears, it must be on day 3 (index 2)
-      for (let i = 0; i < plan!.recipes.length; i++) {
-        if (plan!.recipes[i].proteinType === "pork") {
+      for (let i = 0; i < plan.recipes.length; i++) {
+        if (plan.recipes[i].proteinType === "pork") {
           expect(i + 1).toBe(3);
         }
       }
@@ -854,9 +860,9 @@ describe("Meal plan optimization across locales", () => {
         maxSlowDays: 2,
         slowOnlyOnDays: [6, 7], // weekends
       });
-      expect(plan).not.toBeNull();
-      for (let i = 0; i < plan!.recipes.length; i++) {
-        if (plan!.recipes[i].complexity === "slow") {
+      assertNotNull(plan);
+      for (let i = 0; i < plan.recipes.length; i++) {
+        if (plan.recipes[i].complexity === "slow") {
           expect([6, 7]).toContain(i + 1);
         }
       }
@@ -882,8 +888,8 @@ describe("Meal plan optimization across locales", () => {
         maxSlowDays: 1,
         preferCuisines: { asian: 2 },
       });
-      expect(plan).not.toBeNull();
-      const asianCount = plan!.recipes.filter((r) => r.cuisineType === "asian").length;
+      assertNotNull(plan);
+      const asianCount = plan.recipes.filter((r) => r.cuisineType === "asian").length;
       // Best-effort; might not always hit 2 but should try
       expect(asianCount).toBeGreaterThanOrEqual(1);
     });
@@ -901,10 +907,10 @@ describe("Meal plan optimization across locales", () => {
         slowOnlyOnDays: [6, 7],
         ingredientTags: dk.ingredientTags,
       });
-      expect(plan).not.toBeNull();
-      expect(plan!.recipes.length).toBe(7);
+      assertNotNull(plan);
+      expect(plan.recipes.length).toBe(7);
       // No shellfish
-      expect(plan!.recipes.every((r) => r.proteinType !== "shellfish")).toBe(true);
+      expect(plan.recipes.every((r) => r.proteinType !== "shellfish")).toBe(true);
     });
   });
 
@@ -986,7 +992,7 @@ describe("Backward compatibility", () => {
       maxPerCuisine: 2,
       maxSlowDays: 1,
     });
-    expect(plan).not.toBeNull();
-    expect(plan!.recipes.length).toBe(5);
+    assertNotNull(plan);
+    expect(plan.recipes.length).toBe(5);
   });
 });
