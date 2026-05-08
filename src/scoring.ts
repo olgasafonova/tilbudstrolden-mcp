@@ -415,7 +415,14 @@ export function expandSearchTerms(
  * is a modifier/addition, not the primary product.
  * "Tunfilet i olivenolie" → olivenolie is a modifier.
  */
-const MODIFIER_PREPOSITIONS = [" i ", " med ", " og ", " på ", " til ", " fra "];
+const MODIFIER_PREPOSITIONS = [
+  " i ",
+  " med ",
+  " og ",
+  " på ",
+  " til ",
+  " fra ",
+];
 
 /**
  * Check if the search term appears only in a modifier position
@@ -435,6 +442,70 @@ export function isModifierPosition(
   return prepositions.some((prep) => before.includes(prep));
 }
 
+interface MatchIndicators {
+  nonIngredient: string[];
+  processed: string[];
+  raw: string[];
+  bundlePatterns: string[];
+  modifierPrepositions: string[];
+}
+
+function resolveIndicators(locale?: Locale): MatchIndicators {
+  return {
+    nonIngredient: locale?.nonIngredientIndicators ?? NON_INGREDIENT_INDICATORS,
+    processed: locale?.processedIndicators ?? PROCESSED_INDICATORS,
+    raw: locale?.rawIndicators ?? RAW_INDICATORS,
+    bundlePatterns: locale?.bundlePatterns ?? [" eller ", " el. "],
+    modifierPrepositions: locale?.modifierPrepositions ?? MODIFIER_PREPOSITIONS,
+  };
+}
+
+// Case-insensitive: API returns "føtex" but users type "Føtex" or "Foetex".
+// Returns the matched-store bonus, or null if the offer should be rejected.
+function preferredStoreScore(
+  offer: Offer,
+  preferredStores: Set<string>,
+): number | null {
+  if (preferredStores.size === 0) return 0;
+  const offerStoreLower = offer.store.toLowerCase();
+  for (const ps of preferredStores) {
+    if (ps.toLowerCase() === offerStoreLower) {
+      return SCORE.PREFERRED_STORE_BONUS;
+    }
+  }
+  return null;
+}
+
+function scoreMeatOrFrozen(
+  heading: string,
+  isBundleHeading: boolean,
+  ind: MatchIndicators,
+): number {
+  const isProcessed = ind.processed.some((p) => heading.includes(p));
+  const isRaw = ind.raw.some((r) => heading.includes(r));
+
+  let delta = 0;
+  if (isProcessed && !isRaw) delta += SCORE.PROCESSED_PENALTY;
+  else if (isRaw) delta += SCORE.RAW_BONUS;
+
+  if (isBundleHeading && isProcessed) delta += SCORE.BUNDLE_UNCERTAINTY_PENALTY;
+
+  return delta;
+}
+
+function scoreTextMatch(
+  heading: string,
+  term: string,
+  modifierPrepositions: string[],
+): number {
+  if (heading.startsWith(term) || heading === term)
+    return SCORE.EXACT_MATCH_BONUS;
+  if (!heading.includes(term)) return SCORE.NO_MATCH_PENALTY;
+  return isModifierPosition(heading, term, modifierPrepositions)
+    ? SCORE.MODIFIER_PENALTY
+    : SCORE.PARTIAL_MATCH_BONUS;
+}
+
 /**
  * Score how well a deal matches an ingredient for cooking.
  * Returns 0 (no match) to ~100 (perfect match).
@@ -451,69 +522,26 @@ export function scoreDealMatch(
 
   const heading = offer.heading.toLowerCase();
   const term = searchTerm.toLowerCase();
+  const ind = resolveIndicators(locale);
 
-  const nonIngredientInd = locale?.nonIngredientIndicators ?? NON_INGREDIENT_INDICATORS;
-  const processedInd = locale?.processedIndicators ?? PROCESSED_INDICATORS;
-  const rawInd = locale?.rawIndicators ?? RAW_INDICATORS;
-  const bundlePat = locale?.bundlePatterns ?? [" eller ", " el. "];
-  const modPrep = locale?.modifierPrepositions ?? MODIFIER_PREPOSITIONS;
+  if (ind.nonIngredient.some((s) => heading.includes(s))) return 0;
 
-  // Reject non-ingredient products (garden seeds, ready meals, non-food)
-  if (nonIngredientInd.some((ind) => heading.includes(ind))) return 0;
+  const storeBonus = preferredStoreScore(offer, preferredStores);
+  if (storeBonus === null) return 0;
 
-  let score = SCORE.BASE;
-
-  // Hard-exclude non-preferred stores when preferences are configured
-  // Case-insensitive: API returns "føtex" but users type "Føtex" or "Foetex"
-  if (preferredStores.size > 0) {
-    const offerStoreLower = offer.store.toLowerCase();
-    let storeMatch = false;
-    for (const ps of preferredStores) {
-      if (ps.toLowerCase() === offerStoreLower) {
-        storeMatch = true;
-        break;
-      }
-    }
-    if (!storeMatch) return 0;
-    score += SCORE.PREFERRED_STORE_BONUS;
-  }
-
-  const isBundleHeading = bundlePat.some((p) => heading.includes(p));
+  const isBundleHeading = ind.bundlePatterns.some((p) => heading.includes(p));
+  let score = SCORE.BASE + storeBonus;
 
   if (ingredient.category === "meat" || ingredient.category === "frozen") {
-    const isProcessed = processedInd.some((p) => heading.includes(p));
-    const isRaw = rawInd.some((r) => heading.includes(r));
-
-    if (isProcessed && !isRaw) {
-      score += SCORE.PROCESSED_PENALTY;
-    } else if (isRaw) {
-      score += SCORE.RAW_BONUS;
-    }
-
-    if (isBundleHeading && isProcessed) {
-      score += SCORE.BUNDLE_UNCERTAINTY_PENALTY;
-    }
+    score += scoreMeatOrFrozen(heading, isBundleHeading, ind);
   }
 
   // Penalize ambiguous "X eller Y" / "X el. Y" bundles for all categories
-  // ("Pasta eller pastasauce", "Knorr Lasagne el. Risretter")
   if (isBundleHeading) {
-    score += SCORE.PARTIAL_MATCH_BONUS - SCORE.EXACT_MATCH_BONUS; // net -15
+    score += SCORE.PARTIAL_MATCH_BONUS - SCORE.EXACT_MATCH_BONUS;
   }
 
-  // Text matching with modifier detection
-  if (heading.startsWith(term) || heading === term) {
-    score += SCORE.EXACT_MATCH_BONUS;
-  } else if (heading.includes(term)) {
-    if (isModifierPosition(heading, term, modPrep)) {
-      score += SCORE.MODIFIER_PENALTY;
-    } else {
-      score += SCORE.PARTIAL_MATCH_BONUS;
-    }
-  } else {
-    // Term not found at all in heading
-    score += SCORE.NO_MATCH_PENALTY;
-  }
+  score += scoreTextMatch(heading, term, ind.modifierPrepositions);
 
   return Math.max(0, score);
 }
@@ -541,7 +569,13 @@ export function findBestDeal(
   for (const term of searchTerms) {
     const offers = dealMap.get(term) ?? [];
     for (const offer of offers) {
-      const matchScore = scoreDealMatch(offer, ing as Ingredient, term, preferredStores, locale);
+      const matchScore = scoreDealMatch(
+        offer,
+        ing as Ingredient,
+        term,
+        preferredStores,
+        locale,
+      );
       if (matchScore < SCORE.VIABILITY_THRESHOLD) continue;
       allScored.push({ offer, score: matchScore });
     }
@@ -713,43 +747,63 @@ export function cuisinePreferencePenalty(
   return penalty;
 }
 
+/** True if this protein name is excluded and the current day isn't one of its allowed exceptions. */
+function isProteinBlockedOnDay(
+  proteinName: string,
+  day: number,
+  constraints: VarietyConstraints,
+): boolean {
+  if (!constraints.excludeProteins?.includes(proteinName)) return false;
+  const exceptions = constraints.allowProteinOnDays?.[proteinName];
+  return !exceptions?.includes(day);
+}
+
+function isProteinExcludedOnDay(
+  recipe: ScoredRecipe,
+  day: number,
+  constraints: VarietyConstraints,
+): boolean {
+  if (!constraints.excludeProteins?.length) return false;
+
+  if (isProteinBlockedOnDay(recipe.proteinType, day, constraints)) return true;
+
+  // Ingredient-level exclusion (catches bacon in "vegetarian" recipes, etc.)
+  const matchedTag = findExcludedTag(
+    recipe.ingredients,
+    constraints.excludeProteins,
+    constraints.ingredientTags,
+  );
+  if (matchedTag && matchedTag !== recipe.proteinType) {
+    return isProteinBlockedOnDay(matchedTag, day, constraints);
+  }
+  return false;
+}
+
+function isSlowOnAllowedDay(
+  recipe: ScoredRecipe,
+  day: number,
+  constraints: VarietyConstraints,
+): boolean {
+  if (recipe.complexity !== "slow") return true;
+  if (!constraints.slowOnlyOnDays) return true;
+  return constraints.slowOnlyOnDays.includes(day);
+}
+
 /** Check if a recipe is allowed on a specific day (1-indexed). */
 function isAllowedOnDay(
   recipe: ScoredRecipe,
   day: number,
   constraints: VarietyConstraints,
 ): boolean {
-  if (!constraints.excludeProteins?.length) {
-    // No exclusions; skip all dietary checks
-  } else {
-    // Check proteinType-level exclusion
-    if (constraints.excludeProteins.includes(recipe.proteinType)) {
-      const exceptions = constraints.allowProteinOnDays?.[recipe.proteinType];
-      if (!exceptions?.includes(day)) return false;
-    }
-    // Check ingredient-level exclusion (catches bacon in "vegetarian" recipes, etc.)
-    const matchedTag = findExcludedTag(
-      recipe.ingredients,
-      constraints.excludeProteins,
-      constraints.ingredientTags,
-    );
-    if (matchedTag && matchedTag !== recipe.proteinType) {
-      const exceptions = constraints.allowProteinOnDays?.[matchedTag];
-      if (!exceptions?.includes(day)) return false;
-    }
-  }
-  // Check slow-only-on-days restriction
-  if (
-    recipe.complexity === "slow" &&
-    constraints.slowOnlyOnDays &&
-    !constraints.slowOnlyOnDays.includes(day)
-  ) {
-    return false;
-  }
+  if (isProteinExcludedOnDay(recipe, day, constraints)) return false;
+  if (!isSlowOnAllowedDay(recipe, day, constraints)) return false;
   return true;
 }
 
-function isValidCombo(combo: ScoredRecipe[], constraints: VarietyConstraints): boolean {
+function isValidCombo(
+  combo: ScoredRecipe[],
+  constraints: VarietyConstraints,
+): boolean {
   const proteinCount: Record<string, number> = {};
   const cuisineCount: Record<string, number> = {};
   let slowCount = 0;
@@ -787,7 +841,11 @@ export function findOptimalWeek(
       return (hasExceptions[r.proteinType]?.length ?? 0) > 0;
     }
     // Check ingredient-level exclusion
-    const matchedTag = findExcludedTag(r.ingredients, exclusions, constraints.ingredientTags);
+    const matchedTag = findExcludedTag(
+      r.ingredients,
+      exclusions,
+      constraints.ingredientTags,
+    );
     if (matchedTag) {
       return (hasExceptions[matchedTag]?.length ?? 0) > 0;
     }
@@ -815,9 +873,12 @@ function fitsGreedyConstraints(
 ): boolean {
   if (used.has(recipe.name)) return false;
   if (!isAllowedOnDay(recipe, day, constraints)) return false;
-  if ((proteinCount[recipe.proteinType] ?? 0) >= constraints.maxPerProtein) return false;
-  if ((cuisineCount[recipe.cuisineType] ?? 0) >= constraints.maxPerCuisine) return false;
-  if (recipe.complexity === "slow" && slowCount >= constraints.maxSlowDays) return false;
+  if ((proteinCount[recipe.proteinType] ?? 0) >= constraints.maxPerProtein)
+    return false;
+  if ((cuisineCount[recipe.cuisineType] ?? 0) >= constraints.maxPerCuisine)
+    return false;
+  if (recipe.complexity === "slow" && slowCount >= constraints.maxSlowDays)
+    return false;
   return true;
 }
 
@@ -826,7 +887,9 @@ function findOptimalGreedy(
   days: number,
   constraints: VarietyConstraints,
 ): { recipes: ScoredRecipe[]; basketCost: number } | null {
-  const byBasketValue = [...scored].sort((a, b) => a.estimatedCost - b.estimatedCost);
+  const byBasketValue = [...scored].sort(
+    (a, b) => a.estimatedCost - b.estimatedCost,
+  );
   const picked: (ScoredRecipe | null)[] = new Array(days).fill(null);
   const used = new Set<string>();
   const proteinCount: Record<string, number> = {};
@@ -851,8 +914,10 @@ function findOptimalGreedy(
 
       picked[dayIdx] = recipe;
       used.add(recipe.name);
-      proteinCount[recipe.proteinType] = (proteinCount[recipe.proteinType] ?? 0) + 1;
-      cuisineCount[recipe.cuisineType] = (cuisineCount[recipe.cuisineType] ?? 0) + 1;
+      proteinCount[recipe.proteinType] =
+        (proteinCount[recipe.proteinType] ?? 0) + 1;
+      cuisineCount[recipe.cuisineType] =
+        (cuisineCount[recipe.cuisineType] ?? 0) + 1;
       if (recipe.complexity === "slow") slowCount++;
       break;
     }
@@ -870,6 +935,85 @@ function findOptimalGreedy(
   return { recipes: improved, basketCost: basket.totalCost };
 }
 
+interface SwappableSlot {
+  recipe: ScoredRecipe;
+  index: number;
+}
+
+function findCuisineCandidates(
+  allRecipes: ScoredRecipe[],
+  cuisine: string,
+  usedNames: Set<string>,
+): ScoredRecipe[] {
+  return allRecipes
+    .filter((r) => r.cuisineType === cuisine && !usedNames.has(r.name))
+    .sort((a, b) => a.estimatedCost - b.estimatedCost);
+}
+
+function findSwappableSlots(
+  result: ScoredRecipe[],
+  cuisine: string,
+): SwappableSlot[] {
+  return result
+    .map((r, i) => ({ recipe: r, index: i }))
+    .filter((s) => s.recipe.cuisineType !== cuisine)
+    .sort((a, b) => b.recipe.estimatedCost - a.recipe.estimatedCost);
+}
+
+/** Try each slot until one swap keeps the plan valid. Mutates result and usedNames on success. */
+function trySwapCandidate(
+  candidate: ScoredRecipe,
+  swappable: SwappableSlot[],
+  result: ScoredRecipe[],
+  cuisine: string,
+  constraints: VarietyConstraints,
+  usedNames: Set<string>,
+): boolean {
+  for (const slot of swappable) {
+    if (result[slot.index].cuisineType === cuisine) continue; // already swapped
+    const backup = result[slot.index];
+    result[slot.index] = candidate;
+    if (isValidCombo(result, constraints)) {
+      usedNames.delete(backup.name);
+      usedNames.add(candidate.name);
+      return true;
+    }
+    result[slot.index] = backup; // revert
+  }
+  return false;
+}
+
+function fillCuisineQuota(
+  cuisine: string,
+  target: number,
+  result: ScoredRecipe[],
+  allRecipes: ScoredRecipe[],
+  constraints: VarietyConstraints,
+  usedNames: Set<string>,
+): void {
+  let count = result.filter((r) => r.cuisineType === cuisine).length;
+  if (count >= target) return;
+
+  const candidates = findCuisineCandidates(allRecipes, cuisine, usedNames);
+  const swappable = findSwappableSlots(result, cuisine);
+
+  for (const candidate of candidates) {
+    if (count >= target) break;
+    if (
+      trySwapCandidate(
+        candidate,
+        swappable,
+        result,
+        cuisine,
+        constraints,
+        usedNames,
+      )
+    ) {
+      count++;
+    }
+  }
+}
+
 /** Swap non-preferred recipes for preferred-cuisine ones, maintaining constraint validity */
 function applyPreferenceSwaps(
   plan: ScoredRecipe[],
@@ -881,36 +1025,14 @@ function applyPreferenceSwaps(
   const usedNames = new Set(result.map((r) => r.name));
 
   for (const [cuisine, target] of Object.entries(prefs)) {
-    let count = result.filter((r) => r.cuisineType === cuisine).length;
-    if (count >= target) continue;
-
-    // Find candidate recipes of the preferred cuisine not already in plan
-    const candidates = allRecipes
-      .filter((r) => r.cuisineType === cuisine && !usedNames.has(r.name))
-      .sort((a, b) => a.estimatedCost - b.estimatedCost);
-
-    // Find swappable slots: non-preferred cuisine, sorted by cost (most expensive first)
-    const swappable = result
-      .map((r, i) => ({ recipe: r, index: i }))
-      .filter((s) => s.recipe.cuisineType !== cuisine)
-      .sort((a, b) => b.recipe.estimatedCost - a.recipe.estimatedCost);
-
-    for (const candidate of candidates) {
-      if (count >= target) break;
-      for (const slot of swappable) {
-        if (result[slot.index].cuisineType === cuisine) continue; // already swapped
-        // Try swap and validate
-        const backup = result[slot.index];
-        result[slot.index] = candidate;
-        if (isValidCombo(result, constraints)) {
-          usedNames.delete(backup.name);
-          usedNames.add(candidate.name);
-          count++;
-          break;
-        }
-        result[slot.index] = backup; // revert
-      }
-    }
+    fillCuisineQuota(
+      cuisine,
+      target,
+      result,
+      allRecipes,
+      constraints,
+      usedNames,
+    );
   }
   return result;
 }
@@ -940,17 +1062,23 @@ function findOptimalBrute(
   }
 
   const hasDayConstraints =
-    (constraints.excludeProteins?.length ?? 0) > 0 || (constraints.slowOnlyOnDays?.length ?? 0) > 0;
+    (constraints.excludeProteins?.length ?? 0) > 0 ||
+    (constraints.slowOnlyOnDays?.length ?? 0) > 0;
   const prefs = constraints.preferCuisines ?? {};
 
   // Adjusted cost includes a soft penalty for unmet cuisine preferences
   function adjustedCost(combo: ScoredRecipe[]): number {
-    return calculateBasketCost(combo).totalCost + cuisinePreferencePenalty(combo, prefs);
+    return (
+      calculateBasketCost(combo).totalCost +
+      cuisinePreferencePenalty(combo, prefs)
+    );
   }
 
   if (hasDayConstraints) {
     // Permutations needed: order matters for day-specific constraints.
-    const candidates = [...scored].sort((a, b) => a.estimatedCost - b.estimatedCost).slice(0, 10);
+    const candidates = [...scored]
+      .sort((a, b) => a.estimatedCost - b.estimatedCost)
+      .slice(0, 10);
     for (const perm of permutations(candidates, days)) {
       if (!isValidCombo(perm, constraints)) continue;
       const cost = adjustedCost(perm);
@@ -961,7 +1089,11 @@ function findOptimalBrute(
     }
   } else {
     // No day-specific constraints: combinations suffice (faster).
-    function* combinations(arr: ScoredRecipe[], k: number, start = 0): Generator<ScoredRecipe[]> {
+    function* combinations(
+      arr: ScoredRecipe[],
+      k: number,
+      start = 0,
+    ): Generator<ScoredRecipe[]> {
       if (k === 0) {
         yield [];
         return;

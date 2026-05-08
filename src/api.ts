@@ -71,42 +71,97 @@ function currencySymbol(currency: string): string {
   return CURRENCY_SYMBOLS[currency] ?? currency;
 }
 
-function parseOffer(raw: RawOffer): Offer {
-  const price = raw.pricing?.price ?? null;
-  const qty = raw.quantity?.size?.from ?? null;
-  const unitSymbol = raw.quantity?.unit?.symbol ?? null;
-  const sym = currencySymbol(raw.pricing?.currency ?? "DKK");
+// Units that are reported per gram/ml but should be displayed per kg/L.
+const KILO_UNIT_CONVERSIONS: Record<
+  string,
+  { factor: number; suffix: string }
+> = {
+  g: { factor: 1000, suffix: "kg" },
+  ml: { factor: 1000, suffix: "L" },
+};
 
-  let pricePerUnit: string | null = null;
-  if (price !== null && qty !== null && qty > 0 && unitSymbol) {
-    if (unitSymbol === "g" && qty < 1000) {
-      pricePerUnit = `${((price / qty) * 1000).toFixed(2)} ${sym}/kg`;
-    } else if (unitSymbol === "ml" && qty < 1000) {
-      pricePerUnit = `${((price / qty) * 1000).toFixed(2)} ${sym}/L`;
-    } else {
-      pricePerUnit = `${(price / qty).toFixed(2)} ${sym}/${unitSymbol}`;
-    }
+function unitPricePerUnit(
+  price: number,
+  qty: number,
+  unitSymbol: string,
+  sym: string,
+): string {
+  const conv = KILO_UNIT_CONVERSIONS[unitSymbol];
+  if (conv && qty < conv.factor) {
+    return `${((price / qty) * conv.factor).toFixed(2)} ${sym}/${conv.suffix}`;
   }
+  return `${(price / qty).toFixed(2)} ${sym}/${unitSymbol}`;
+}
 
+interface QuantityFields {
+  quantity: number | null;
+  unit: string | null;
+  pieces: number | null;
+}
+
+function readQuantityFields(raw: RawOffer): QuantityFields {
+  return {
+    quantity: raw.quantity?.size?.from ?? null,
+    unit: raw.quantity?.unit?.symbol ?? null,
+    pieces: raw.quantity?.pieces?.from ?? null,
+  };
+}
+
+interface PricingFields {
+  price: number | null;
+  prePrice: number | null;
+  currency: string;
+  sym: string;
+}
+
+function readPricingFields(raw: RawOffer): PricingFields {
+  const currency = raw.pricing?.currency ?? "DKK";
+  return {
+    price: raw.pricing?.price ?? null,
+    prePrice: raw.pricing?.pre_price ?? null,
+    currency,
+    sym: currencySymbol(currency),
+  };
+}
+
+function readStore(raw: RawOffer): string {
+  return raw.branding?.name ?? raw.dealer?.name ?? "Unknown";
+}
+
+function computePricePerUnit(
+  price: number,
+  q: QuantityFields,
+  sym: string,
+): string | null {
+  if (q.quantity !== null && q.quantity > 0 && q.unit) {
+    return unitPricePerUnit(price, q.quantity, q.unit, sym);
+  }
   // Pieces-based pricing (e.g. eggs sold per piece)
-  if (price !== null && !pricePerUnit) {
-    const pieces = raw.quantity?.pieces?.from ?? null;
-    if (pieces !== null && pieces > 0) {
-      pricePerUnit = `${(price / pieces).toFixed(2)} ${sym}/pcs`;
-    }
+  if (q.pieces !== null && q.pieces > 0) {
+    return `${(price / q.pieces).toFixed(2)} ${sym}/pcs`;
   }
+  return null;
+}
+
+function parseOffer(raw: RawOffer): Offer {
+  const pricing = readPricingFields(raw);
+  const q = readQuantityFields(raw);
+  const pricePerUnit =
+    pricing.price !== null
+      ? computePricePerUnit(pricing.price, q, pricing.sym)
+      : null;
 
   return {
     id: raw.id,
     heading: raw.heading,
     description: raw.description,
-    price,
-    prePrice: raw.pricing?.pre_price ?? null,
-    currency: raw.pricing?.currency ?? "DKK",
-    quantity: qty,
-    unit: unitSymbol,
+    price: pricing.price,
+    prePrice: pricing.prePrice,
+    currency: pricing.currency,
+    quantity: q.quantity,
+    unit: q.unit,
     pricePerUnit,
-    store: raw.branding?.name ?? raw.dealer?.name ?? "Unknown",
+    store: readStore(raw),
     storeId: raw.dealer_id,
     validFrom: raw.run_from,
     validUntil: raw.run_till,
@@ -149,7 +204,10 @@ async function fetchJson<T>(url: string): Promise<T> {
 }
 
 // Simple concurrency limiter for batch operations
-async function withConcurrencyLimit<T>(tasks: (() => Promise<T>)[], limit: number): Promise<T[]> {
+async function withConcurrencyLimit<T>(
+  tasks: (() => Promise<T>)[],
+  limit: number,
+): Promise<T[]> {
   const results: (T | undefined)[] = new Array(tasks.length);
   const executing: Set<Promise<void>> = new Set();
 
@@ -194,14 +252,20 @@ export function clearDealerCache(): void {
   dealerCacheByCountry.clear();
 }
 
-export async function searchDeals(query: string, limit = 20, countryId = "DK"): Promise<Offer[]> {
+export async function searchDeals(
+  query: string,
+  limit = 20,
+  countryId = "DK",
+): Promise<Offer[]> {
   // Request extra to compensate for filtering non-matching results
   const params = new URLSearchParams({
     query,
     limit: String(limit * 3),
     country_id: countryId,
   });
-  const raw = await fetchJson<RawOffer[]>(`${BASE_URL}/offers/search?${params}`);
+  const raw = await fetchJson<RawOffer[]>(
+    `${BASE_URL}/offers/search?${params}`,
+  );
 
   if (countryId === "DK") {
     // DK: /dealers endpoint works, use allow-list for best accuracy
@@ -223,7 +287,10 @@ export async function searchDeals(query: string, limit = 20, countryId = "DK"): 
     .slice(0, limit);
 }
 
-export async function getStoreOffers(dealerId: string, limit = 50): Promise<Offer[]> {
+export async function getStoreOffers(
+  dealerId: string,
+  limit = 50,
+): Promise<Offer[]> {
   const params = new URLSearchParams({
     dealer_id: dealerId,
     limit: String(limit),
