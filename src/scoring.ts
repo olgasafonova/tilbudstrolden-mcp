@@ -155,12 +155,7 @@ export function computeShoppingCost(
   if (!pack || pack.baseUnit !== parsed.unit) return null;
 
   const servingScale = recipeServings > 0 ? householdSize / recipeServings : 1;
-  return buildShoppingCost(
-    offer,
-    pack,
-    parsed.amount * servingScale,
-    parsed.unit,
-  );
+  return buildShoppingCost(offer, pack, parsed.amount * servingScale, parsed.unit);
 }
 
 /**
@@ -404,14 +399,7 @@ export function expandSearchTerms(
  * is a modifier/addition, not the primary product.
  * "Tunfilet i olivenolie" → olivenolie is a modifier.
  */
-const MODIFIER_PREPOSITIONS = [
-  " i ",
-  " med ",
-  " og ",
-  " på ",
-  " til ",
-  " fra ",
-];
+const MODIFIER_PREPOSITIONS = [" i ", " med ", " og ", " på ", " til ", " fra "];
 
 /**
  * Check if the search term appears only in a modifier position
@@ -451,10 +439,7 @@ function resolveIndicators(locale?: Locale): MatchIndicators {
 
 // Case-insensitive: API returns "føtex" but users type "Føtex" or "Foetex".
 // Returns the matched-store bonus, or null if the offer should be rejected.
-function preferredStoreScore(
-  offer: Offer,
-  preferredStores: Set<string>,
-): number | null {
+function preferredStoreScore(offer: Offer, preferredStores: Set<string>): number | null {
   if (preferredStores.size === 0) return 0;
   const offerStoreLower = offer.store.toLowerCase();
   for (const ps of preferredStores) {
@@ -482,13 +467,8 @@ function scoreMeatOrFrozen(
   return delta;
 }
 
-function scoreTextMatch(
-  heading: string,
-  term: string,
-  modifierPrepositions: string[],
-): number {
-  if (heading.startsWith(term) || heading === term)
-    return SCORE.EXACT_MATCH_BONUS;
+function scoreTextMatch(heading: string, term: string, modifierPrepositions: string[]): number {
+  if (heading.startsWith(term) || heading === term) return SCORE.EXACT_MATCH_BONUS;
   if (!heading.includes(term)) return SCORE.NO_MATCH_PENALTY;
   return isModifierPosition(heading, term, modifierPrepositions)
     ? SCORE.MODIFIER_PENALTY
@@ -688,10 +668,7 @@ export const INGREDIENT_TAGS: Record<string, string[]> = {
   egg: ["æg"],
 };
 
-function anyIngredientMatchesPattern(
-  ingredients: ScoredIngredient[],
-  patterns: string[],
-): boolean {
+function anyIngredientMatchesPattern(ingredients: ScoredIngredient[], patterns: string[]): boolean {
   return ingredients.some((ing) => {
     const name = ing.name.toLowerCase();
     return patterns.some((p) => name.includes(p));
@@ -803,10 +780,7 @@ function isAllowedOnDay(
   return true;
 }
 
-function isValidCombo(
-  combo: ScoredRecipe[],
-  constraints: VarietyConstraints,
-): boolean {
+function isValidCombo(combo: ScoredRecipe[], constraints: VarietyConstraints): boolean {
   const proteinCount: Record<string, number> = {};
   const cuisineCount: Record<string, number> = {};
   let slowCount = 0;
@@ -844,11 +818,7 @@ export function findOptimalWeek(
       return (hasExceptions[r.proteinType]?.length ?? 0) > 0;
     }
     // Check ingredient-level exclusion
-    const matchedTag = findExcludedTag(
-      r.ingredients,
-      exclusions,
-      constraints.ingredientTags,
-    );
+    const matchedTag = findExcludedTag(r.ingredients, exclusions, constraints.ingredientTags);
     if (matchedTag) {
       return (hasExceptions[matchedTag]?.length ?? 0) > 0;
     }
@@ -876,12 +846,9 @@ function fitsGreedyConstraints(
 ): boolean {
   if (used.has(recipe.name)) return false;
   if (!isAllowedOnDay(recipe, day, constraints)) return false;
-  if ((proteinCount[recipe.proteinType] ?? 0) >= constraints.maxPerProtein)
-    return false;
-  if ((cuisineCount[recipe.cuisineType] ?? 0) >= constraints.maxPerCuisine)
-    return false;
-  if (recipe.complexity === "slow" && slowCount >= constraints.maxSlowDays)
-    return false;
+  if ((proteinCount[recipe.proteinType] ?? 0) >= constraints.maxPerProtein) return false;
+  if ((cuisineCount[recipe.cuisineType] ?? 0) >= constraints.maxPerCuisine) return false;
+  if (recipe.complexity === "slow" && slowCount >= constraints.maxSlowDays) return false;
   return true;
 }
 
@@ -890,9 +857,7 @@ function findOptimalGreedy(
   days: number,
   constraints: VarietyConstraints,
 ): { recipes: ScoredRecipe[]; basketCost: number } | null {
-  const byBasketValue = [...scored].sort(
-    (a, b) => a.estimatedCost - b.estimatedCost,
-  );
+  const byBasketValue = [...scored].sort((a, b) => a.estimatedCost - b.estimatedCost);
   const picked: (ScoredRecipe | null)[] = new Array(days).fill(null);
   const used = new Set<string>();
   const proteinCount: Record<string, number> = {};
@@ -917,10 +882,8 @@ function findOptimalGreedy(
 
       picked[dayIdx] = recipe;
       used.add(recipe.name);
-      proteinCount[recipe.proteinType] =
-        (proteinCount[recipe.proteinType] ?? 0) + 1;
-      cuisineCount[recipe.cuisineType] =
-        (cuisineCount[recipe.cuisineType] ?? 0) + 1;
+      proteinCount[recipe.proteinType] = (proteinCount[recipe.proteinType] ?? 0) + 1;
+      cuisineCount[recipe.cuisineType] = (cuisineCount[recipe.cuisineType] ?? 0) + 1;
       if (recipe.complexity === "slow") slowCount++;
       break;
     }
@@ -950,19 +913,13 @@ interface SwapContext {
   usedNames: Set<string>;
 }
 
-function findCuisineCandidates(
-  ctx: SwapContext,
-  cuisine: string,
-): ScoredRecipe[] {
+function findCuisineCandidates(ctx: SwapContext, cuisine: string): ScoredRecipe[] {
   return ctx.allRecipes
     .filter((r) => r.cuisineType === cuisine && !ctx.usedNames.has(r.name))
     .sort((a, b) => a.estimatedCost - b.estimatedCost);
 }
 
-function findSwappableSlots(
-  ctx: SwapContext,
-  cuisine: string,
-): SwappableSlot[] {
+function findSwappableSlots(ctx: SwapContext, cuisine: string): SwappableSlot[] {
   return ctx.result
     .map((r, i) => ({ recipe: r, index: i }))
     .filter((s) => s.recipe.cuisineType !== cuisine)
@@ -990,11 +947,7 @@ function trySwapCandidate(
   return false;
 }
 
-function fillCuisineQuota(
-  ctx: SwapContext,
-  cuisine: string,
-  target: number,
-): void {
+function fillCuisineQuota(ctx: SwapContext, cuisine: string, target: number): void {
   let count = ctx.result.filter((r) => r.cuisineType === cuisine).length;
   if (count >= target) return;
 
@@ -1054,23 +1007,17 @@ function findOptimalBrute(
   }
 
   const hasDayConstraints =
-    (constraints.excludeProteins?.length ?? 0) > 0 ||
-    (constraints.slowOnlyOnDays?.length ?? 0) > 0;
+    (constraints.excludeProteins?.length ?? 0) > 0 || (constraints.slowOnlyOnDays?.length ?? 0) > 0;
   const prefs = constraints.preferCuisines ?? {};
 
   // Adjusted cost includes a soft penalty for unmet cuisine preferences
   function adjustedCost(combo: ScoredRecipe[]): number {
-    return (
-      calculateBasketCost(combo).totalCost +
-      cuisinePreferencePenalty(combo, prefs)
-    );
+    return calculateBasketCost(combo).totalCost + cuisinePreferencePenalty(combo, prefs);
   }
 
   if (hasDayConstraints) {
     // Permutations needed: order matters for day-specific constraints.
-    const candidates = [...scored]
-      .sort((a, b) => a.estimatedCost - b.estimatedCost)
-      .slice(0, 10);
+    const candidates = [...scored].sort((a, b) => a.estimatedCost - b.estimatedCost).slice(0, 10);
     for (const perm of permutations(candidates, days)) {
       if (!isValidCombo(perm, constraints)) continue;
       const cost = adjustedCost(perm);
@@ -1081,11 +1028,7 @@ function findOptimalBrute(
     }
   } else {
     // No day-specific constraints: combinations suffice (faster).
-    function* combinations(
-      arr: ScoredRecipe[],
-      k: number,
-      start = 0,
-    ): Generator<ScoredRecipe[]> {
+    function* combinations(arr: ScoredRecipe[], k: number, start = 0): Generator<ScoredRecipe[]> {
       if (k === 0) {
         yield [];
         return;

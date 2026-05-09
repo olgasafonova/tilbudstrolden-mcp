@@ -72,20 +72,12 @@ function currencySymbol(currency: string): string {
 }
 
 // Units that are reported per gram/ml but should be displayed per kg/L.
-const KILO_UNIT_CONVERSIONS: Record<
-  string,
-  { factor: number; suffix: string }
-> = {
+const KILO_UNIT_CONVERSIONS: Record<string, { factor: number; suffix: string }> = {
   g: { factor: 1000, suffix: "kg" },
   ml: { factor: 1000, suffix: "L" },
 };
 
-function unitPricePerUnit(
-  price: number,
-  qty: number,
-  unitSymbol: string,
-  sym: string,
-): string {
+function unitPricePerUnit(price: number, qty: number, unitSymbol: string, sym: string): string {
   const conv = KILO_UNIT_CONVERSIONS[unitSymbol];
   if (conv && qty < conv.factor) {
     return `${((price / qty) * conv.factor).toFixed(2)} ${sym}/${conv.suffix}`;
@@ -128,11 +120,7 @@ function readStore(raw: RawOffer): string {
   return raw.branding?.name ?? raw.dealer?.name ?? "Unknown";
 }
 
-function computePricePerUnit(
-  price: number,
-  q: QuantityFields,
-  sym: string,
-): string | null {
+function computePricePerUnit(price: number, q: QuantityFields, sym: string): string | null {
   if (q.quantity !== null && q.quantity > 0 && q.unit) {
     return unitPricePerUnit(price, q.quantity, q.unit, sym);
   }
@@ -147,9 +135,7 @@ function parseOffer(raw: RawOffer): Offer {
   const pricing = readPricingFields(raw);
   const q = readQuantityFields(raw);
   const pricePerUnit =
-    pricing.price !== null
-      ? computePricePerUnit(pricing.price, q, pricing.sym)
-      : null;
+    pricing.price !== null ? computePricePerUnit(pricing.price, q, pricing.sym) : null;
 
   return {
     id: raw.id,
@@ -204,10 +190,7 @@ async function fetchJson<T>(url: string): Promise<T> {
 }
 
 // Simple concurrency limiter for batch operations
-async function withConcurrencyLimit<T>(
-  tasks: (() => Promise<T>)[],
-  limit: number,
-): Promise<T[]> {
+async function withConcurrencyLimit<T>(tasks: (() => Promise<T>)[], limit: number): Promise<T[]> {
   const results: (T | undefined)[] = new Array(tasks.length);
   const executing: Set<Promise<void>> = new Set();
 
@@ -252,20 +235,14 @@ export function clearDealerCache(): void {
   dealerCacheByCountry.clear();
 }
 
-export async function searchDeals(
-  query: string,
-  limit = 20,
-  countryId = "DK",
-): Promise<Offer[]> {
+export async function searchDeals(query: string, limit = 20, countryId = "DK"): Promise<Offer[]> {
   // Request extra to compensate for filtering non-matching results
   const params = new URLSearchParams({
     query,
     limit: String(limit * 3),
     country_id: countryId,
   });
-  const raw = await fetchJson<RawOffer[]>(
-    `${BASE_URL}/offers/search?${params}`,
-  );
+  const raw = await fetchJson<RawOffer[]>(`${BASE_URL}/offers/search?${params}`);
 
   if (countryId === "DK") {
     // DK: /dealers endpoint works, use allow-list for best accuracy
@@ -287,10 +264,7 @@ export async function searchDeals(
     .slice(0, limit);
 }
 
-export async function getStoreOffers(
-  dealerId: string,
-  limit = 50,
-): Promise<Offer[]> {
+export async function getStoreOffers(dealerId: string, limit = 50): Promise<Offer[]> {
   const params = new URLSearchParams({
     dealer_id: dealerId,
     limit: String(limit),
