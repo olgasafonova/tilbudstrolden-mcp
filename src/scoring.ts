@@ -44,48 +44,6 @@ export function parseQuantity(qty: string): ParsedQuantity | null {
   return { amount: amount * conversion.factor, unit: conversion.base };
 }
 
-/**
- * Compute actual ingredient cost based on unit pricing, quantity needed,
- * and household serving scale. Falls back to sticker price when unit
- * comparison isn't possible.
- */
-export function computeIngredientCost(
-  offer: Offer,
-  recipeQty: string,
-  recipeServings: number,
-  householdSize: number,
-): number {
-  const price = offer.price;
-  if (price === null || price <= 0) return 0;
-
-  const servingScale = recipeServings > 0 ? householdSize / recipeServings : 1;
-
-  const parsed = parseQuantity(recipeQty);
-  if (!parsed) return price * servingScale;
-
-  // Try to match offer units with recipe units
-  const offerQty = offer.quantity;
-  const offerUnit = offer.unit?.toLowerCase() ?? null;
-  if (offerQty === null || offerQty <= 0 || !offerUnit) {
-    return price * servingScale;
-  }
-
-  // Normalize offer unit to base
-  const offerConversion = UNIT_CONVERSIONS[offerUnit];
-  if (!offerConversion) return price * servingScale;
-
-  const offerBaseQty = offerQty * offerConversion.factor;
-  const offerBaseUnit = offerConversion.base;
-
-  // Units must be compatible (both g, both ml, or both stk)
-  if (offerBaseUnit !== parsed.unit) return price * servingScale;
-
-  // unit_price × quantity_needed × serving_scale
-  const unitPrice = price / offerBaseQty;
-  const scaledAmount = parsed.amount * servingScale;
-  return Math.round(unitPrice * scaledAmount * 100) / 100;
-}
-
 // --- Shopping cost (whole packs) ---
 
 export interface ShoppingCost {
@@ -107,6 +65,79 @@ export interface ShoppingCost {
   unitPrice: string | null;
 }
 
+interface OfferPackInfo {
+  packSize: number;
+  baseUnit: string;
+  price: number;
+}
+
+/** Pack size in base units + price, or null when offer can't be normalized to a pack. */
+function getOfferPackInfo(offer: Offer): OfferPackInfo | null {
+  const price = offer.price;
+  if (price === null || price <= 0) return null;
+
+  const offerQty = offer.quantity;
+  if (!offerQty || offerQty <= 0) return null;
+
+  const offerUnit = offer.unit?.toLowerCase();
+  if (!offerUnit) return null;
+
+  const conversion = UNIT_CONVERSIONS[offerUnit];
+  if (!conversion) return null;
+
+  return {
+    packSize: offerQty * conversion.factor,
+    baseUnit: conversion.base,
+    price,
+  };
+}
+
+function buildShoppingCost(
+  offer: Offer,
+  pack: OfferPackInfo,
+  totalAmount: number,
+  unit: string,
+): ShoppingCost {
+  const packsNeeded = Math.ceil(totalAmount / pack.packSize);
+  return {
+    quantityNeeded: Math.round(totalAmount),
+    unitNeeded: unit,
+    packSize: Math.round(pack.packSize),
+    packsNeeded,
+    pricePerPack: pack.price,
+    totalCost: packsNeeded * pack.price,
+    leftover: Math.round(packsNeeded * pack.packSize - totalAmount),
+    unitPrice: offer.pricePerUnit,
+  };
+}
+
+/**
+ * Compute actual ingredient cost based on unit pricing, quantity needed,
+ * and household serving scale. Falls back to sticker price when unit
+ * comparison isn't possible.
+ */
+export function computeIngredientCost(
+  offer: Offer,
+  recipeQty: string,
+  recipeServings: number,
+  householdSize: number,
+): number {
+  const price = offer.price;
+  if (price === null || price <= 0) return 0;
+
+  const servingScale = recipeServings > 0 ? householdSize / recipeServings : 1;
+
+  const parsed = parseQuantity(recipeQty);
+  if (!parsed) return price * servingScale;
+
+  const pack = getOfferPackInfo(offer);
+  if (!pack || pack.baseUnit !== parsed.unit) return price * servingScale;
+
+  const unitPrice = pack.price / pack.packSize;
+  const scaledAmount = parsed.amount * servingScale;
+  return Math.round(unitPrice * scaledAmount * 100) / 100;
+}
+
 /**
  * Compute how many whole packs to buy and the real register cost.
  * Returns null when units can't be compared (fall back to sticker price).
@@ -117,39 +148,19 @@ export function computeShoppingCost(
   recipeServings: number,
   householdSize: number,
 ): ShoppingCost | null {
-  const price = offer.price;
-  if (price === null || price <= 0) return null;
-
-  const servingScale = recipeServings > 0 ? householdSize / recipeServings : 1;
-
   const parsed = parseQuantity(recipeQty);
   if (!parsed) return null;
 
-  const offerQty = offer.quantity;
-  const offerUnit = offer.unit?.toLowerCase() ?? null;
-  if (offerQty === null || offerQty <= 0 || !offerUnit) return null;
+  const pack = getOfferPackInfo(offer);
+  if (!pack || pack.baseUnit !== parsed.unit) return null;
 
-  const offerConversion = UNIT_CONVERSIONS[offerUnit];
-  if (!offerConversion) return null;
-
-  const packSize = offerQty * offerConversion.factor;
-  if (offerConversion.base !== parsed.unit) return null;
-
-  const quantityNeeded = parsed.amount * servingScale;
-  const packsNeeded = Math.ceil(quantityNeeded / packSize);
-  const totalCost = packsNeeded * price;
-  const leftover = packsNeeded * packSize - quantityNeeded;
-
-  return {
-    quantityNeeded: Math.round(quantityNeeded),
-    unitNeeded: parsed.unit,
-    packSize: Math.round(packSize),
-    packsNeeded,
-    pricePerPack: price,
-    totalCost,
-    leftover: Math.round(leftover),
-    unitPrice: offer.pricePerUnit,
-  };
+  const servingScale = recipeServings > 0 ? householdSize / recipeServings : 1;
+  return buildShoppingCost(
+    offer,
+    pack,
+    parsed.amount * servingScale,
+    parsed.unit,
+  );
 }
 
 /**
@@ -161,34 +172,12 @@ export function computeShoppingCostFromTotal(
   totalAmount: number,
   unit: string,
 ): ShoppingCost | null {
-  const price = offer.price;
-  if (price === null || price <= 0) return null;
   if (totalAmount <= 0) return null;
 
-  const offerQty = offer.quantity;
-  const offerUnit = offer.unit?.toLowerCase() ?? null;
-  if (offerQty === null || offerQty <= 0 || !offerUnit) return null;
+  const pack = getOfferPackInfo(offer);
+  if (!pack || pack.baseUnit !== unit) return null;
 
-  const offerConversion = UNIT_CONVERSIONS[offerUnit];
-  if (!offerConversion) return null;
-
-  const packSize = offerQty * offerConversion.factor;
-  if (offerConversion.base !== unit) return null;
-
-  const packsNeeded = Math.ceil(totalAmount / packSize);
-  const totalCost = packsNeeded * price;
-  const leftover = packsNeeded * packSize - totalAmount;
-
-  return {
-    quantityNeeded: Math.round(totalAmount),
-    unitNeeded: unit,
-    packSize: Math.round(packSize),
-    packsNeeded,
-    pricePerPack: price,
-    totalCost,
-    leftover: Math.round(leftover),
-    unitPrice: offer.pricePerUnit,
-  };
+  return buildShoppingCost(offer, pack, totalAmount, unit);
 }
 
 /**
@@ -553,6 +542,36 @@ export interface DealSearchResult {
   candidates: { offer: Offer; score: number }[];
 }
 
+function scoreOffersAcrossTerms(
+  searchTerms: string[],
+  dealMap: Map<string, Offer[]>,
+  scoreFn: (offer: Offer, term: string) => number,
+): { offer: Offer; score: number }[] {
+  const scored: { offer: Offer; score: number }[] = [];
+  for (const term of searchTerms) {
+    for (const offer of dealMap.get(term) ?? []) {
+      const score = scoreFn(offer, term);
+      if (score < SCORE.VIABILITY_THRESHOLD) continue;
+      scored.push({ offer, score });
+    }
+  }
+  return scored;
+}
+
+function dedupOffersByBestScore(
+  scored: { offer: Offer; score: number }[],
+): { offer: Offer; score: number }[] {
+  const byId = new Map<string, { offer: Offer; score: number }>();
+  for (const s of scored) {
+    const existing = byId.get(s.offer.id);
+    if (!existing || s.score > existing.score) byId.set(s.offer.id, s);
+  }
+  return [...byId.values()].sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    return (a.offer.price ?? 999) - (b.offer.price ?? 999);
+  });
+}
+
 /**
  * Find the best deal for an ingredient across all its search terms.
  * Returns the best match plus up to 3 candidates for low-confidence matches.
@@ -563,37 +582,11 @@ export function findBestDeal(
   preferredStores: Set<string>,
   locale?: Locale,
 ): DealSearchResult {
-  const allScored: { offer: Offer; score: number }[] = [];
   const searchTerms = expandSearchTerms(ing.searchTerms, locale?.synonymMap);
-
-  for (const term of searchTerms) {
-    const offers = dealMap.get(term) ?? [];
-    for (const offer of offers) {
-      const matchScore = scoreDealMatch(
-        offer,
-        ing as Ingredient,
-        term,
-        preferredStores,
-        locale,
-      );
-      if (matchScore < SCORE.VIABILITY_THRESHOLD) continue;
-      allScored.push({ offer, score: matchScore });
-    }
-  }
-
-  // Deduplicate by offer ID, keep highest score
-  const byId = new Map<string, { offer: Offer; score: number }>();
-  for (const s of allScored) {
-    const existing = byId.get(s.offer.id);
-    if (!existing || s.score > existing.score) {
-      byId.set(s.offer.id, s);
-    }
-  }
-
-  const sorted = [...byId.values()].sort((a, b) => {
-    if (b.score !== a.score) return b.score - a.score;
-    return (a.offer.price ?? 999) - (b.offer.price ?? 999);
-  });
+  const scored = scoreOffersAcrossTerms(searchTerms, dealMap, (offer, term) =>
+    scoreDealMatch(offer, ing as Ingredient, term, preferredStores, locale),
+  );
+  const sorted = dedupOffersByBestScore(scored);
 
   if (sorted.length === 0) {
     return { best: null, bestScore: 0, confidence: "none", candidates: [] };
@@ -601,9 +594,12 @@ export function findBestDeal(
 
   const top = sorted[0];
   const confidence = top.score >= SCORE.CONFIDENT_THRESHOLD ? "high" : "low";
-  const candidates = sorted.slice(0, 3);
-
-  return { best: top.offer, bestScore: top.score, confidence, candidates };
+  return {
+    best: top.offer,
+    bestScore: top.score,
+    confidence,
+    candidates: sorted.slice(0, 3),
+  };
 }
 
 /**
@@ -692,6 +688,16 @@ export const INGREDIENT_TAGS: Record<string, string[]> = {
   egg: ["æg"],
 };
 
+function anyIngredientMatchesPattern(
+  ingredients: ScoredIngredient[],
+  patterns: string[],
+): boolean {
+  return ingredients.some((ing) => {
+    const name = ing.name.toLowerCase();
+    return patterns.some((p) => name.includes(p));
+  });
+}
+
 /**
  * Check if a recipe contains ingredients matching any of the excluded dietary tags.
  * Returns the first matched tag, or null if no match.
@@ -704,10 +710,7 @@ export function findExcludedTag(
   for (const tag of exclusions) {
     const patterns = ingredientTags[tag];
     if (!patterns) continue;
-    for (const ing of ingredients) {
-      const name = ing.name.toLowerCase();
-      if (patterns.some((p) => name.includes(p))) return tag;
-    }
+    if (anyIngredientMatchesPattern(ingredients, patterns)) return tag;
   }
   return null;
 }
@@ -940,75 +943,67 @@ interface SwappableSlot {
   index: number;
 }
 
+interface SwapContext {
+  result: ScoredRecipe[];
+  allRecipes: ScoredRecipe[];
+  constraints: VarietyConstraints;
+  usedNames: Set<string>;
+}
+
 function findCuisineCandidates(
-  allRecipes: ScoredRecipe[],
+  ctx: SwapContext,
   cuisine: string,
-  usedNames: Set<string>,
 ): ScoredRecipe[] {
-  return allRecipes
-    .filter((r) => r.cuisineType === cuisine && !usedNames.has(r.name))
+  return ctx.allRecipes
+    .filter((r) => r.cuisineType === cuisine && !ctx.usedNames.has(r.name))
     .sort((a, b) => a.estimatedCost - b.estimatedCost);
 }
 
 function findSwappableSlots(
-  result: ScoredRecipe[],
+  ctx: SwapContext,
   cuisine: string,
 ): SwappableSlot[] {
-  return result
+  return ctx.result
     .map((r, i) => ({ recipe: r, index: i }))
     .filter((s) => s.recipe.cuisineType !== cuisine)
     .sort((a, b) => b.recipe.estimatedCost - a.recipe.estimatedCost);
 }
 
-/** Try each slot until one swap keeps the plan valid. Mutates result and usedNames on success. */
+/** Try each slot until one swap keeps the plan valid. Mutates ctx.result and ctx.usedNames on success. */
 function trySwapCandidate(
+  ctx: SwapContext,
   candidate: ScoredRecipe,
   swappable: SwappableSlot[],
-  result: ScoredRecipe[],
   cuisine: string,
-  constraints: VarietyConstraints,
-  usedNames: Set<string>,
 ): boolean {
   for (const slot of swappable) {
-    if (result[slot.index].cuisineType === cuisine) continue; // already swapped
-    const backup = result[slot.index];
-    result[slot.index] = candidate;
-    if (isValidCombo(result, constraints)) {
-      usedNames.delete(backup.name);
-      usedNames.add(candidate.name);
+    if (ctx.result[slot.index].cuisineType === cuisine) continue; // already swapped
+    const backup = ctx.result[slot.index];
+    ctx.result[slot.index] = candidate;
+    if (isValidCombo(ctx.result, ctx.constraints)) {
+      ctx.usedNames.delete(backup.name);
+      ctx.usedNames.add(candidate.name);
       return true;
     }
-    result[slot.index] = backup; // revert
+    ctx.result[slot.index] = backup; // revert
   }
   return false;
 }
 
 function fillCuisineQuota(
+  ctx: SwapContext,
   cuisine: string,
   target: number,
-  result: ScoredRecipe[],
-  allRecipes: ScoredRecipe[],
-  constraints: VarietyConstraints,
-  usedNames: Set<string>,
 ): void {
-  let count = result.filter((r) => r.cuisineType === cuisine).length;
+  let count = ctx.result.filter((r) => r.cuisineType === cuisine).length;
   if (count >= target) return;
 
-  const candidates = findCuisineCandidates(allRecipes, cuisine, usedNames);
-  const swappable = findSwappableSlots(result, cuisine);
+  const candidates = findCuisineCandidates(ctx, cuisine);
+  const swappable = findSwappableSlots(ctx, cuisine);
 
   for (const candidate of candidates) {
     if (count >= target) break;
-    if (
-      trySwapCandidate(
-        candidate,
-        swappable,
-        result,
-        cuisine,
-        constraints,
-        usedNames,
-      )
-    ) {
+    if (trySwapCandidate(ctx, candidate, swappable, cuisine)) {
       count++;
     }
   }
@@ -1021,20 +1016,17 @@ function applyPreferenceSwaps(
   constraints: VarietyConstraints,
 ): ScoredRecipe[] {
   const prefs = constraints.preferCuisines ?? {};
-  const result = [...plan];
-  const usedNames = new Set(result.map((r) => r.name));
+  const ctx: SwapContext = {
+    result: [...plan],
+    allRecipes,
+    constraints,
+    usedNames: new Set(plan.map((r) => r.name)),
+  };
 
   for (const [cuisine, target] of Object.entries(prefs)) {
-    fillCuisineQuota(
-      cuisine,
-      target,
-      result,
-      allRecipes,
-      constraints,
-      usedNames,
-    );
+    fillCuisineQuota(ctx, cuisine, target);
   }
-  return result;
+  return ctx.result;
 }
 
 function findOptimalBrute(
