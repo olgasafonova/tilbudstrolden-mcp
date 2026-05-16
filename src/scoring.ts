@@ -745,39 +745,58 @@ export function cuisinePreferencePenalty(
   return penalty;
 }
 
+/** Tag is excluded for `day` unless explicitly allowed via the per-tag exception list. */
+function isTagBlockedOnDay(
+  tag: string,
+  day: number,
+  allowProteinOnDays: Record<string, number[]> | undefined,
+): boolean {
+  const exceptions = allowProteinOnDays?.[tag];
+  return !exceptions?.includes(day);
+}
+
+/** Slow recipes are restricted to the configured day list (when one is set). */
+function violatesSlowDayRestriction(
+  recipe: ScoredRecipe,
+  day: number,
+  slowOnlyOnDays: number[] | undefined,
+): boolean {
+  if (recipe.complexity !== "slow") return false;
+  if (!slowOnlyOnDays) return false;
+  return !slowOnlyOnDays.includes(day);
+}
+
 /** Check if a recipe is allowed on a specific day (1-indexed). */
 function isAllowedOnDay(
   recipe: ScoredRecipe,
   day: number,
   constraints: VarietyConstraints,
 ): boolean {
-  if (!constraints.excludeProteins?.length) {
-    // No exclusions; skip all dietary checks
-  } else {
+  const exclusions = constraints.excludeProteins;
+  if (exclusions?.length) {
     // Check proteinType-level exclusion
-    if (constraints.excludeProteins.includes(recipe.proteinType)) {
-      const exceptions = constraints.allowProteinOnDays?.[recipe.proteinType];
-      if (!exceptions?.includes(day)) return false;
+    if (
+      exclusions.includes(recipe.proteinType) &&
+      isTagBlockedOnDay(recipe.proteinType, day, constraints.allowProteinOnDays)
+    ) {
+      return false;
     }
     // Check ingredient-level exclusion (catches bacon in "vegetarian" recipes, etc.)
     const matchedTag = findExcludedTag(
       recipe.ingredients,
-      constraints.excludeProteins,
+      exclusions,
       constraints.ingredientTags,
     );
-    if (matchedTag && matchedTag !== recipe.proteinType) {
-      const exceptions = constraints.allowProteinOnDays?.[matchedTag];
-      if (!exceptions?.includes(day)) return false;
+    if (
+      matchedTag &&
+      matchedTag !== recipe.proteinType &&
+      isTagBlockedOnDay(matchedTag, day, constraints.allowProteinOnDays)
+    ) {
+      return false;
     }
   }
-  // Check slow-only-on-days restriction
-  if (
-    recipe.complexity === "slow" &&
-    constraints.slowOnlyOnDays &&
-    !constraints.slowOnlyOnDays.includes(day)
-  ) {
+  if (violatesSlowDayRestriction(recipe, day, constraints.slowOnlyOnDays))
     return false;
-  }
   return true;
 }
 
@@ -916,6 +935,73 @@ function findOptimalGreedy(
   return { recipes: improved, basketCost: basket.totalCost };
 }
 
+/**
+ * Attempt to swap `candidate` into one of `swappable` slots in `result`,
+ * keeping the plan constraint-valid. Returns `true` if a swap landed; mutates
+ * `result` and `usedNames` on success.
+ */
+function trySwapCandidateIntoPlan(
+  candidate: ScoredRecipe,
+  cuisine: string,
+  result: ScoredRecipe[],
+  swappable: { recipe: ScoredRecipe; index: number }[],
+  usedNames: Set<string>,
+  constraints: VarietyConstraints,
+): boolean {
+  for (const slot of swappable) {
+    if (result[slot.index].cuisineType === cuisine) continue; // already swapped
+    const backup = result[slot.index];
+    result[slot.index] = candidate;
+    if (isValidCombo(result, constraints)) {
+      usedNames.delete(backup.name);
+      usedNames.add(candidate.name);
+      return true;
+    }
+    result[slot.index] = backup; // revert
+  }
+  return false;
+}
+
+/** Add cuisine-preference swaps for a single cuisine target. */
+function boostCuisineCount(
+  cuisine: string,
+  target: number,
+  result: ScoredRecipe[],
+  allRecipes: ScoredRecipe[],
+  usedNames: Set<string>,
+  constraints: VarietyConstraints,
+): void {
+  let count = result.filter((r) => r.cuisineType === cuisine).length;
+  if (count >= target) return;
+
+  // Find candidate recipes of the preferred cuisine not already in plan
+  const candidates = allRecipes
+    .filter((r) => r.cuisineType === cuisine && !usedNames.has(r.name))
+    .sort((a, b) => a.estimatedCost - b.estimatedCost);
+
+  // Find swappable slots: non-preferred cuisine, sorted by cost (most expensive first)
+  const swappable = result
+    .map((r, i) => ({ recipe: r, index: i }))
+    .filter((s) => s.recipe.cuisineType !== cuisine)
+    .sort((a, b) => b.recipe.estimatedCost - a.recipe.estimatedCost);
+
+  for (const candidate of candidates) {
+    if (count >= target) break;
+    if (
+      trySwapCandidateIntoPlan(
+        candidate,
+        cuisine,
+        result,
+        swappable,
+        usedNames,
+        constraints,
+      )
+    ) {
+      count++;
+    }
+  }
+}
+
 /** Swap non-preferred recipes for preferred-cuisine ones, maintaining constraint validity */
 function applyPreferenceSwaps(
   plan: ScoredRecipe[],
@@ -927,36 +1013,14 @@ function applyPreferenceSwaps(
   const usedNames = new Set(result.map((r) => r.name));
 
   for (const [cuisine, target] of Object.entries(prefs)) {
-    let count = result.filter((r) => r.cuisineType === cuisine).length;
-    if (count >= target) continue;
-
-    // Find candidate recipes of the preferred cuisine not already in plan
-    const candidates = allRecipes
-      .filter((r) => r.cuisineType === cuisine && !usedNames.has(r.name))
-      .sort((a, b) => a.estimatedCost - b.estimatedCost);
-
-    // Find swappable slots: non-preferred cuisine, sorted by cost (most expensive first)
-    const swappable = result
-      .map((r, i) => ({ recipe: r, index: i }))
-      .filter((s) => s.recipe.cuisineType !== cuisine)
-      .sort((a, b) => b.recipe.estimatedCost - a.recipe.estimatedCost);
-
-    for (const candidate of candidates) {
-      if (count >= target) break;
-      for (const slot of swappable) {
-        if (result[slot.index].cuisineType === cuisine) continue; // already swapped
-        // Try swap and validate
-        const backup = result[slot.index];
-        result[slot.index] = candidate;
-        if (isValidCombo(result, constraints)) {
-          usedNames.delete(backup.name);
-          usedNames.add(candidate.name);
-          count++;
-          break;
-        }
-        result[slot.index] = backup; // revert
-      }
-    }
+    boostCuisineCount(
+      cuisine,
+      target,
+      result,
+      allRecipes,
+      usedNames,
+      constraints,
+    );
   }
   return result;
 }
