@@ -1012,75 +1012,77 @@ function applyPreferenceSwaps(
   return ctx.result;
 }
 
+/** Ordered permutations of size k (day assignment matters for per-day constraints). */
+function* permutations(
+  arr: ScoredRecipe[],
+  k: number,
+  chosen: ScoredRecipe[] = [],
+): Generator<ScoredRecipe[]> {
+  if (k === 0) {
+    yield chosen;
+    return;
+  }
+  for (let i = 0; i < arr.length; i++) {
+    const rest = [...arr.slice(0, i), ...arr.slice(i + 1)];
+    yield* permutations(rest, k - 1, [...chosen, arr[i]]);
+  }
+}
+
+/** Unordered combinations of size k (used when no day-specific constraints apply). */
+function* combinations(arr: ScoredRecipe[], k: number, start = 0): Generator<ScoredRecipe[]> {
+  if (k === 0) {
+    yield [];
+    return;
+  }
+  for (let i = start; i <= arr.length - k; i++) {
+    for (const rest of combinations(arr, k - 1, i + 1)) {
+      yield [arr[i], ...rest];
+    }
+  }
+}
+
+function hasDayConstraints(constraints: VarietyConstraints): boolean {
+  return (
+    (constraints.excludeProteins?.length ?? 0) > 0 || (constraints.slowOnlyOnDays?.length ?? 0) > 0
+  );
+}
+
+interface BestCombo {
+  combo: ScoredRecipe[];
+  cost: number;
+}
+
+/** Pick the cheapest valid combo from a stream, scoring with a soft cuisine-preference penalty. */
+function cheapestValidCombo(
+  candidateCombos: Generator<ScoredRecipe[]>,
+  constraints: VarietyConstraints,
+): BestCombo | null {
+  const prefs = constraints.preferCuisines ?? {};
+  let best: BestCombo | null = null;
+  for (const combo of candidateCombos) {
+    if (!isValidCombo(combo, constraints)) continue;
+    const cost = calculateBasketCost(combo).totalCost + cuisinePreferencePenalty(combo, prefs);
+    if (!best || cost < best.cost) {
+      best = { combo: [...combo], cost };
+    }
+  }
+  return best;
+}
+
 function findOptimalBrute(
   scored: ScoredRecipe[],
   days: number,
   constraints: VarietyConstraints,
 ): { recipes: ScoredRecipe[]; basketCost: number } | null {
-  let bestCombo: ScoredRecipe[] | null = null;
-  let bestCost = Number.POSITIVE_INFINITY;
+  const candidateCombos = hasDayConstraints(constraints)
+    ? // Permutations needed: order matters for day-specific constraints.
+      permutations([...scored].sort((a, b) => a.estimatedCost - b.estimatedCost).slice(0, 10), days)
+    : // No day-specific constraints: combinations suffice (faster).
+      combinations(scored, days);
 
-  // Generate ordered permutations (day assignment matters for per-day constraints)
-  function* permutations(
-    arr: ScoredRecipe[],
-    k: number,
-    chosen: ScoredRecipe[] = [],
-  ): Generator<ScoredRecipe[]> {
-    if (k === 0) {
-      yield chosen;
-      return;
-    }
-    for (let i = 0; i < arr.length; i++) {
-      const rest = [...arr.slice(0, i), ...arr.slice(i + 1)];
-      yield* permutations(rest, k - 1, [...chosen, arr[i]]);
-    }
-  }
+  const best = cheapestValidCombo(candidateCombos, constraints);
+  if (!best) return null;
 
-  const hasDayConstraints =
-    (constraints.excludeProteins?.length ?? 0) > 0 || (constraints.slowOnlyOnDays?.length ?? 0) > 0;
-  const prefs = constraints.preferCuisines ?? {};
-
-  // Adjusted cost includes a soft penalty for unmet cuisine preferences
-  function adjustedCost(combo: ScoredRecipe[]): number {
-    return calculateBasketCost(combo).totalCost + cuisinePreferencePenalty(combo, prefs);
-  }
-
-  if (hasDayConstraints) {
-    // Permutations needed: order matters for day-specific constraints.
-    const candidates = [...scored].sort((a, b) => a.estimatedCost - b.estimatedCost).slice(0, 10);
-    for (const perm of permutations(candidates, days)) {
-      if (!isValidCombo(perm, constraints)) continue;
-      const cost = adjustedCost(perm);
-      if (cost < bestCost) {
-        bestCost = cost;
-        bestCombo = [...perm];
-      }
-    }
-  } else {
-    // No day-specific constraints: combinations suffice (faster).
-    function* combinations(arr: ScoredRecipe[], k: number, start = 0): Generator<ScoredRecipe[]> {
-      if (k === 0) {
-        yield [];
-        return;
-      }
-      for (let i = start; i <= arr.length - k; i++) {
-        for (const rest of combinations(arr, k - 1, i + 1)) {
-          yield [arr[i], ...rest];
-        }
-      }
-    }
-
-    for (const combo of combinations(scored, days)) {
-      if (!isValidCombo(combo, constraints)) continue;
-      const cost = adjustedCost(combo);
-      if (cost < bestCost) {
-        bestCost = cost;
-        bestCombo = combo;
-      }
-    }
-  }
-
-  if (!bestCombo) return null;
-  const realCost = calculateBasketCost(bestCombo).totalCost;
-  return { recipes: bestCombo, basketCost: realCost };
+  const realCost = calculateBasketCost(best.combo).totalCost;
+  return { recipes: best.combo, basketCost: realCost };
 }
