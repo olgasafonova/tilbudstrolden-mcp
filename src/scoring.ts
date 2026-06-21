@@ -427,6 +427,12 @@ interface MatchIndicators {
   modifierPrepositions: string[];
 }
 
+/** Everything needed to score a deal that stays constant across one ingredient search. */
+export interface MatchContext {
+  preferredStores: Set<string>;
+  indicators: MatchIndicators;
+}
+
 function resolveIndicators(locale?: Locale): MatchIndicators {
   return {
     nonIngredient: locale?.nonIngredientIndicators ?? NON_INGREDIENT_INDICATORS,
@@ -435,6 +441,11 @@ function resolveIndicators(locale?: Locale): MatchIndicators {
     bundlePatterns: locale?.bundlePatterns ?? [" eller ", " el. "],
     modifierPrepositions: locale?.modifierPrepositions ?? MODIFIER_PREPOSITIONS,
   };
+}
+
+/** Build the per-search scoring context from preferred stores and an optional locale. */
+export function buildMatchContext(preferredStores: Set<string>, locale?: Locale): MatchContext {
+  return { preferredStores, indicators: resolveIndicators(locale) };
 }
 
 // Case-insensitive: API returns "føtex" but users type "Føtex" or "Foetex".
@@ -476,26 +487,24 @@ function scoreTextMatch(heading: string, term: string, modifierPrepositions: str
 }
 
 /**
- * Score how well a deal matches an ingredient for cooking.
+ * Score a deal against an ingredient using a pre-built MatchContext.
+ * Internal hot-path entry used when many offers share one context.
  * Returns 0 (no match) to ~100 (perfect match).
- * Accepts optional locale for country-specific term matching.
  */
-export function scoreDealMatch(
+export function scoreDealMatchCtx(
   offer: Offer,
   ingredient: Ingredient,
   searchTerm: string,
-  preferredStores: Set<string>,
-  locale?: Locale,
+  ctx: MatchContext,
 ): number {
   if (offer.price === null || offer.price <= 0) return 0;
 
   const heading = offer.heading.toLowerCase();
-  const term = searchTerm.toLowerCase();
-  const ind = resolveIndicators(locale);
+  const ind = ctx.indicators;
 
   if (ind.nonIngredient.some((s) => heading.includes(s))) return 0;
 
-  const storeBonus = preferredStoreScore(offer, preferredStores);
+  const storeBonus = preferredStoreScore(offer, ctx.preferredStores);
   if (storeBonus === null) return 0;
 
   const isBundleHeading = ind.bundlePatterns.some((p) => heading.includes(p));
@@ -510,9 +519,29 @@ export function scoreDealMatch(
     score += SCORE.PARTIAL_MATCH_BONUS - SCORE.EXACT_MATCH_BONUS;
   }
 
-  score += scoreTextMatch(heading, term, ind.modifierPrepositions);
+  score += scoreTextMatch(heading, searchTerm.toLowerCase(), ind.modifierPrepositions);
 
   return Math.max(0, score);
+}
+
+/**
+ * Score how well a deal matches an ingredient for cooking.
+ * Returns 0 (no match) to ~100 (perfect match).
+ * Accepts optional locale for country-specific term matching.
+ */
+export function scoreDealMatch(
+  offer: Offer,
+  ingredient: Ingredient,
+  searchTerm: string,
+  preferredStores: Set<string>,
+  locale?: Locale,
+): number {
+  return scoreDealMatchCtx(
+    offer,
+    ingredient,
+    searchTerm,
+    buildMatchContext(preferredStores, locale),
+  );
 }
 
 export interface DealSearchResult {
@@ -563,8 +592,9 @@ export function findBestDeal(
   locale?: Locale,
 ): DealSearchResult {
   const searchTerms = expandSearchTerms(ing.searchTerms, locale?.synonymMap);
+  const ctx = buildMatchContext(preferredStores, locale);
   const scored = scoreOffersAcrossTerms(searchTerms, dealMap, (offer, term) =>
-    scoreDealMatch(offer, ing as Ingredient, term, preferredStores, locale),
+    scoreDealMatchCtx(offer, ing as Ingredient, term, ctx),
   );
   const sorted = dedupOffersByBestScore(scored);
 
@@ -834,21 +864,38 @@ export function findOptimalWeek(
   return findOptimalGreedy(filtered, days, constraints);
 }
 
+/** Running variety tallies accumulated as the greedy selector picks recipes. */
+interface GreedyState {
+  used: Set<string>;
+  proteinCount: Record<string, number>;
+  cuisineCount: Record<string, number>;
+  slowCount: number;
+}
+
+function newGreedyState(): GreedyState {
+  return { used: new Set<string>(), proteinCount: {}, cuisineCount: {}, slowCount: 0 };
+}
+
+/** Record a picked recipe into the running tallies. */
+function recordGreedyPick(state: GreedyState, recipe: ScoredRecipe): void {
+  state.used.add(recipe.name);
+  state.proteinCount[recipe.proteinType] = (state.proteinCount[recipe.proteinType] ?? 0) + 1;
+  state.cuisineCount[recipe.cuisineType] = (state.cuisineCount[recipe.cuisineType] ?? 0) + 1;
+  if (recipe.complexity === "slow") state.slowCount++;
+}
+
 /** Check if a recipe fits the running variety tallies for greedy selection */
 function fitsGreedyConstraints(
   recipe: ScoredRecipe,
   day: number,
   constraints: VarietyConstraints,
-  used: Set<string>,
-  proteinCount: Record<string, number>,
-  cuisineCount: Record<string, number>,
-  slowCount: number,
+  state: GreedyState,
 ): boolean {
-  if (used.has(recipe.name)) return false;
+  if (state.used.has(recipe.name)) return false;
   if (!isAllowedOnDay(recipe, day, constraints)) return false;
-  if ((proteinCount[recipe.proteinType] ?? 0) >= constraints.maxPerProtein) return false;
-  if ((cuisineCount[recipe.cuisineType] ?? 0) >= constraints.maxPerCuisine) return false;
-  if (recipe.complexity === "slow" && slowCount >= constraints.maxSlowDays) return false;
+  if ((state.proteinCount[recipe.proteinType] ?? 0) >= constraints.maxPerProtein) return false;
+  if ((state.cuisineCount[recipe.cuisineType] ?? 0) >= constraints.maxPerCuisine) return false;
+  if (recipe.complexity === "slow" && state.slowCount >= constraints.maxSlowDays) return false;
   return true;
 }
 
@@ -859,32 +906,15 @@ function findOptimalGreedy(
 ): { recipes: ScoredRecipe[]; basketCost: number } | null {
   const byBasketValue = [...scored].sort((a, b) => a.estimatedCost - b.estimatedCost);
   const picked: (ScoredRecipe | null)[] = new Array(days).fill(null);
-  const used = new Set<string>();
-  const proteinCount: Record<string, number> = {};
-  const cuisineCount: Record<string, number> = {};
-  let slowCount = 0;
+  const state = newGreedyState();
 
   for (let dayIdx = 0; dayIdx < days; dayIdx++) {
     const day = dayIdx + 1;
     for (const recipe of byBasketValue) {
-      if (
-        !fitsGreedyConstraints(
-          recipe,
-          day,
-          constraints,
-          used,
-          proteinCount,
-          cuisineCount,
-          slowCount,
-        )
-      )
-        continue;
+      if (!fitsGreedyConstraints(recipe, day, constraints, state)) continue;
 
       picked[dayIdx] = recipe;
-      used.add(recipe.name);
-      proteinCount[recipe.proteinType] = (proteinCount[recipe.proteinType] ?? 0) + 1;
-      cuisineCount[recipe.cuisineType] = (cuisineCount[recipe.cuisineType] ?? 0) + 1;
-      if (recipe.complexity === "slow") slowCount++;
+      recordGreedyPick(state, recipe);
       break;
     }
   }
@@ -982,75 +1012,77 @@ function applyPreferenceSwaps(
   return ctx.result;
 }
 
+/** Ordered permutations of size k (day assignment matters for per-day constraints). */
+function* permutations(
+  arr: ScoredRecipe[],
+  k: number,
+  chosen: ScoredRecipe[] = [],
+): Generator<ScoredRecipe[]> {
+  if (k === 0) {
+    yield chosen;
+    return;
+  }
+  for (let i = 0; i < arr.length; i++) {
+    const rest = [...arr.slice(0, i), ...arr.slice(i + 1)];
+    yield* permutations(rest, k - 1, [...chosen, arr[i]]);
+  }
+}
+
+/** Unordered combinations of size k (used when no day-specific constraints apply). */
+function* combinations(arr: ScoredRecipe[], k: number, start = 0): Generator<ScoredRecipe[]> {
+  if (k === 0) {
+    yield [];
+    return;
+  }
+  for (let i = start; i <= arr.length - k; i++) {
+    for (const rest of combinations(arr, k - 1, i + 1)) {
+      yield [arr[i], ...rest];
+    }
+  }
+}
+
+function hasDayConstraints(constraints: VarietyConstraints): boolean {
+  return (
+    (constraints.excludeProteins?.length ?? 0) > 0 || (constraints.slowOnlyOnDays?.length ?? 0) > 0
+  );
+}
+
+interface BestCombo {
+  combo: ScoredRecipe[];
+  cost: number;
+}
+
+/** Pick the cheapest valid combo from a stream, scoring with a soft cuisine-preference penalty. */
+function cheapestValidCombo(
+  candidateCombos: Generator<ScoredRecipe[]>,
+  constraints: VarietyConstraints,
+): BestCombo | null {
+  const prefs = constraints.preferCuisines ?? {};
+  let best: BestCombo | null = null;
+  for (const combo of candidateCombos) {
+    if (!isValidCombo(combo, constraints)) continue;
+    const cost = calculateBasketCost(combo).totalCost + cuisinePreferencePenalty(combo, prefs);
+    if (!best || cost < best.cost) {
+      best = { combo: [...combo], cost };
+    }
+  }
+  return best;
+}
+
 function findOptimalBrute(
   scored: ScoredRecipe[],
   days: number,
   constraints: VarietyConstraints,
 ): { recipes: ScoredRecipe[]; basketCost: number } | null {
-  let bestCombo: ScoredRecipe[] | null = null;
-  let bestCost = Number.POSITIVE_INFINITY;
+  const candidateCombos = hasDayConstraints(constraints)
+    ? // Permutations needed: order matters for day-specific constraints.
+      permutations([...scored].sort((a, b) => a.estimatedCost - b.estimatedCost).slice(0, 10), days)
+    : // No day-specific constraints: combinations suffice (faster).
+      combinations(scored, days);
 
-  // Generate ordered permutations (day assignment matters for per-day constraints)
-  function* permutations(
-    arr: ScoredRecipe[],
-    k: number,
-    chosen: ScoredRecipe[] = [],
-  ): Generator<ScoredRecipe[]> {
-    if (k === 0) {
-      yield chosen;
-      return;
-    }
-    for (let i = 0; i < arr.length; i++) {
-      const rest = [...arr.slice(0, i), ...arr.slice(i + 1)];
-      yield* permutations(rest, k - 1, [...chosen, arr[i]]);
-    }
-  }
+  const best = cheapestValidCombo(candidateCombos, constraints);
+  if (!best) return null;
 
-  const hasDayConstraints =
-    (constraints.excludeProteins?.length ?? 0) > 0 || (constraints.slowOnlyOnDays?.length ?? 0) > 0;
-  const prefs = constraints.preferCuisines ?? {};
-
-  // Adjusted cost includes a soft penalty for unmet cuisine preferences
-  function adjustedCost(combo: ScoredRecipe[]): number {
-    return calculateBasketCost(combo).totalCost + cuisinePreferencePenalty(combo, prefs);
-  }
-
-  if (hasDayConstraints) {
-    // Permutations needed: order matters for day-specific constraints.
-    const candidates = [...scored].sort((a, b) => a.estimatedCost - b.estimatedCost).slice(0, 10);
-    for (const perm of permutations(candidates, days)) {
-      if (!isValidCombo(perm, constraints)) continue;
-      const cost = adjustedCost(perm);
-      if (cost < bestCost) {
-        bestCost = cost;
-        bestCombo = [...perm];
-      }
-    }
-  } else {
-    // No day-specific constraints: combinations suffice (faster).
-    function* combinations(arr: ScoredRecipe[], k: number, start = 0): Generator<ScoredRecipe[]> {
-      if (k === 0) {
-        yield [];
-        return;
-      }
-      for (let i = start; i <= arr.length - k; i++) {
-        for (const rest of combinations(arr, k - 1, i + 1)) {
-          yield [arr[i], ...rest];
-        }
-      }
-    }
-
-    for (const combo of combinations(scored, days)) {
-      if (!isValidCombo(combo, constraints)) continue;
-      const cost = adjustedCost(combo);
-      if (cost < bestCost) {
-        bestCost = cost;
-        bestCombo = combo;
-      }
-    }
-  }
-
-  if (!bestCombo) return null;
-  const realCost = calculateBasketCost(bestCombo).totalCost;
-  return { recipes: bestCombo, basketCost: realCost };
+  const realCost = calculateBasketCost(best.combo).totalCost;
+  return { recipes: best.combo, basketCost: realCost };
 }
