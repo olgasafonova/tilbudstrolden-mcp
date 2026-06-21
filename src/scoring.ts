@@ -834,21 +834,38 @@ export function findOptimalWeek(
   return findOptimalGreedy(filtered, days, constraints);
 }
 
+/** Running variety tallies accumulated as the greedy selector picks recipes. */
+interface GreedyState {
+  used: Set<string>;
+  proteinCount: Record<string, number>;
+  cuisineCount: Record<string, number>;
+  slowCount: number;
+}
+
+function newGreedyState(): GreedyState {
+  return { used: new Set<string>(), proteinCount: {}, cuisineCount: {}, slowCount: 0 };
+}
+
+/** Record a picked recipe into the running tallies. */
+function recordGreedyPick(state: GreedyState, recipe: ScoredRecipe): void {
+  state.used.add(recipe.name);
+  state.proteinCount[recipe.proteinType] = (state.proteinCount[recipe.proteinType] ?? 0) + 1;
+  state.cuisineCount[recipe.cuisineType] = (state.cuisineCount[recipe.cuisineType] ?? 0) + 1;
+  if (recipe.complexity === "slow") state.slowCount++;
+}
+
 /** Check if a recipe fits the running variety tallies for greedy selection */
 function fitsGreedyConstraints(
   recipe: ScoredRecipe,
   day: number,
   constraints: VarietyConstraints,
-  used: Set<string>,
-  proteinCount: Record<string, number>,
-  cuisineCount: Record<string, number>,
-  slowCount: number,
+  state: GreedyState,
 ): boolean {
-  if (used.has(recipe.name)) return false;
+  if (state.used.has(recipe.name)) return false;
   if (!isAllowedOnDay(recipe, day, constraints)) return false;
-  if ((proteinCount[recipe.proteinType] ?? 0) >= constraints.maxPerProtein) return false;
-  if ((cuisineCount[recipe.cuisineType] ?? 0) >= constraints.maxPerCuisine) return false;
-  if (recipe.complexity === "slow" && slowCount >= constraints.maxSlowDays) return false;
+  if ((state.proteinCount[recipe.proteinType] ?? 0) >= constraints.maxPerProtein) return false;
+  if ((state.cuisineCount[recipe.cuisineType] ?? 0) >= constraints.maxPerCuisine) return false;
+  if (recipe.complexity === "slow" && state.slowCount >= constraints.maxSlowDays) return false;
   return true;
 }
 
@@ -859,32 +876,15 @@ function findOptimalGreedy(
 ): { recipes: ScoredRecipe[]; basketCost: number } | null {
   const byBasketValue = [...scored].sort((a, b) => a.estimatedCost - b.estimatedCost);
   const picked: (ScoredRecipe | null)[] = new Array(days).fill(null);
-  const used = new Set<string>();
-  const proteinCount: Record<string, number> = {};
-  const cuisineCount: Record<string, number> = {};
-  let slowCount = 0;
+  const state = newGreedyState();
 
   for (let dayIdx = 0; dayIdx < days; dayIdx++) {
     const day = dayIdx + 1;
     for (const recipe of byBasketValue) {
-      if (
-        !fitsGreedyConstraints(
-          recipe,
-          day,
-          constraints,
-          used,
-          proteinCount,
-          cuisineCount,
-          slowCount,
-        )
-      )
-        continue;
+      if (!fitsGreedyConstraints(recipe, day, constraints, state)) continue;
 
       picked[dayIdx] = recipe;
-      used.add(recipe.name);
-      proteinCount[recipe.proteinType] = (proteinCount[recipe.proteinType] ?? 0) + 1;
-      cuisineCount[recipe.cuisineType] = (cuisineCount[recipe.cuisineType] ?? 0) + 1;
-      if (recipe.complexity === "slow") slowCount++;
+      recordGreedyPick(state, recipe);
       break;
     }
   }
