@@ -427,6 +427,12 @@ interface MatchIndicators {
   modifierPrepositions: string[];
 }
 
+/** Everything needed to score a deal that stays constant across one ingredient search. */
+export interface MatchContext {
+  preferredStores: Set<string>;
+  indicators: MatchIndicators;
+}
+
 function resolveIndicators(locale?: Locale): MatchIndicators {
   return {
     nonIngredient: locale?.nonIngredientIndicators ?? NON_INGREDIENT_INDICATORS,
@@ -435,6 +441,11 @@ function resolveIndicators(locale?: Locale): MatchIndicators {
     bundlePatterns: locale?.bundlePatterns ?? [" eller ", " el. "],
     modifierPrepositions: locale?.modifierPrepositions ?? MODIFIER_PREPOSITIONS,
   };
+}
+
+/** Build the per-search scoring context from preferred stores and an optional locale. */
+export function buildMatchContext(preferredStores: Set<string>, locale?: Locale): MatchContext {
+  return { preferredStores, indicators: resolveIndicators(locale) };
 }
 
 // Case-insensitive: API returns "føtex" but users type "Føtex" or "Foetex".
@@ -476,26 +487,24 @@ function scoreTextMatch(heading: string, term: string, modifierPrepositions: str
 }
 
 /**
- * Score how well a deal matches an ingredient for cooking.
+ * Score a deal against an ingredient using a pre-built MatchContext.
+ * Internal hot-path entry used when many offers share one context.
  * Returns 0 (no match) to ~100 (perfect match).
- * Accepts optional locale for country-specific term matching.
  */
-export function scoreDealMatch(
+export function scoreDealMatchCtx(
   offer: Offer,
   ingredient: Ingredient,
   searchTerm: string,
-  preferredStores: Set<string>,
-  locale?: Locale,
+  ctx: MatchContext,
 ): number {
   if (offer.price === null || offer.price <= 0) return 0;
 
   const heading = offer.heading.toLowerCase();
-  const term = searchTerm.toLowerCase();
-  const ind = resolveIndicators(locale);
+  const ind = ctx.indicators;
 
   if (ind.nonIngredient.some((s) => heading.includes(s))) return 0;
 
-  const storeBonus = preferredStoreScore(offer, preferredStores);
+  const storeBonus = preferredStoreScore(offer, ctx.preferredStores);
   if (storeBonus === null) return 0;
 
   const isBundleHeading = ind.bundlePatterns.some((p) => heading.includes(p));
@@ -510,9 +519,29 @@ export function scoreDealMatch(
     score += SCORE.PARTIAL_MATCH_BONUS - SCORE.EXACT_MATCH_BONUS;
   }
 
-  score += scoreTextMatch(heading, term, ind.modifierPrepositions);
+  score += scoreTextMatch(heading, searchTerm.toLowerCase(), ind.modifierPrepositions);
 
   return Math.max(0, score);
+}
+
+/**
+ * Score how well a deal matches an ingredient for cooking.
+ * Returns 0 (no match) to ~100 (perfect match).
+ * Accepts optional locale for country-specific term matching.
+ */
+export function scoreDealMatch(
+  offer: Offer,
+  ingredient: Ingredient,
+  searchTerm: string,
+  preferredStores: Set<string>,
+  locale?: Locale,
+): number {
+  return scoreDealMatchCtx(
+    offer,
+    ingredient,
+    searchTerm,
+    buildMatchContext(preferredStores, locale),
+  );
 }
 
 export interface DealSearchResult {
@@ -563,8 +592,9 @@ export function findBestDeal(
   locale?: Locale,
 ): DealSearchResult {
   const searchTerms = expandSearchTerms(ing.searchTerms, locale?.synonymMap);
+  const ctx = buildMatchContext(preferredStores, locale);
   const scored = scoreOffersAcrossTerms(searchTerms, dealMap, (offer, term) =>
-    scoreDealMatch(offer, ing as Ingredient, term, preferredStores, locale),
+    scoreDealMatchCtx(offer, ing as Ingredient, term, ctx),
   );
   const sorted = dedupOffersByBestScore(scored);
 
