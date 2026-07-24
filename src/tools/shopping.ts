@@ -1,8 +1,10 @@
+import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { Offer } from "../api.js";
 import { searchDealsBatch } from "../api.js";
 import { getLocale } from "../locales.js";
+import { buildMealPlanData } from "../meal-plan.js";
 import {
   aggregateQuantities,
   calculateBasketCost,
@@ -13,8 +15,10 @@ import {
   findOptimalWeek,
   formatQuantity,
   parseQuantity,
+  type ScoredRecipe,
 } from "../scoring.js";
 import * as store from "../store.js";
+import { MEAL_PLAN_RESOURCE_URI } from "./meal-plan-widget.js";
 import { scoreAllRecipes } from "./scoring.js";
 import { daysUntilExpiry, errorResult, expiryTag } from "./shared.js";
 
@@ -355,6 +359,28 @@ function formatShoppingOutput(ctx: {
   return parts.join("\n");
 }
 
+/** Build the human-readable meal-plan header lines (before the shopping list). */
+function formatPlanHeader(
+  recipes: ScoredRecipe[],
+  basket: { totalCost: number; sharedSavings: number },
+  days: number,
+  householdSize: number,
+  cur: string,
+): string[] {
+  const lines: string[] = [`# ${days}-day meal plan (${householdSize} people)\n`];
+  lines.push(`Estimated basket: ~${basket.totalCost} ${cur}`);
+  if (basket.sharedSavings > 0) {
+    lines.push(`Shared ingredient savings: ~${basket.sharedSavings} ${cur}`);
+  }
+  lines.push("");
+  recipes.forEach((r, i) => {
+    lines.push(
+      `Day ${i + 1}: ${r.name} (~${r.estimatedCost} ${cur}) [${r.proteinType}, ${r.cuisineType}, ${r.complexity}]`,
+    );
+  });
+  return lines;
+}
+
 export function registerShoppingTools(server: McpServer): void {
   server.tool(
     "generate_shopping_list",
@@ -408,35 +434,44 @@ export function registerShoppingTools(server: McpServer): void {
     },
   );
 
-  server.tool(
+  // Registered via registerAppTool so hosts that support MCP Apps render the
+  // meal-plan widget (ui://meal-plan/view.html) from the structured payload.
+  // Non-widget hosts still receive the text content, unchanged.
+  registerAppTool(
+    server,
     "plan_and_shop",
-    "Score recipes, optimize a weekly meal plan, and generate a shopping list in one step. USE WHEN: 'plan my week', 'what should we eat?', 'make a meal plan with shopping list'. This is the main entry point for weekly dinner planning. NOT FOR: shopping for specific pre-chosen recipes (use generate_shopping_list). Returns meal plan (day-by-day with costs) followed by deal-optimized shopping list grouped by store.",
     {
-      days: z.number().optional().default(7).describe("Days to plan (default 7)"),
-      people: z.number().optional().describe("Household size (overrides stored config)"),
-      maxPerProtein: z
-        .number()
-        .optional()
-        .default(2)
-        .describe("Max same protein in plan (default 2)"),
-      maxPerCuisine: z
-        .number()
-        .optional()
-        .default(2)
-        .describe("Max same cuisine in plan (default 2)"),
-      maxSlowDays: z.number().optional().default(2).describe("Max slow-cook days (default 2)"),
-      excludeProteins: z
-        .array(z.string())
-        .optional()
-        .describe('Dietary exclusions, e.g. ["pork", "dairy"]. Also scans ingredient names.'),
-      slowOnlyOnDays: z
-        .array(z.number())
-        .optional()
-        .describe("Restrict slow recipes to these days (1-indexed). E.g. [6, 7]"),
-      preferCuisines: z
-        .record(z.string(), z.number())
-        .optional()
-        .describe('Soft cuisine preferences: {"asian": 3} = prefer at least 3 Asian dishes'),
+      title: "Plan and shop",
+      description:
+        "Score recipes, optimize a weekly meal plan, and generate a shopping list in one step. USE WHEN: 'plan my week', 'what should we eat?', 'make a meal plan with shopping list'. This is the main entry point for weekly dinner planning. NOT FOR: shopping for specific pre-chosen recipes (use generate_shopping_list). Returns meal plan (day-by-day with costs) followed by deal-optimized shopping list grouped by store.",
+      _meta: { ui: { resourceUri: MEAL_PLAN_RESOURCE_URI } },
+      inputSchema: {
+        days: z.number().optional().default(7).describe("Days to plan (default 7)"),
+        people: z.number().optional().describe("Household size (overrides stored config)"),
+        maxPerProtein: z
+          .number()
+          .optional()
+          .default(2)
+          .describe("Max same protein in plan (default 2)"),
+        maxPerCuisine: z
+          .number()
+          .optional()
+          .default(2)
+          .describe("Max same cuisine in plan (default 2)"),
+        maxSlowDays: z.number().optional().default(2).describe("Max slow-cook days (default 2)"),
+        excludeProteins: z
+          .array(z.string())
+          .optional()
+          .describe('Dietary exclusions, e.g. ["pork", "dairy"]. Also scans ingredient names.'),
+        slowOnlyOnDays: z
+          .array(z.number())
+          .optional()
+          .describe("Restrict slow recipes to these days (1-indexed). E.g. [6, 7]"),
+        preferCuisines: z
+          .record(z.string(), z.number())
+          .optional()
+          .describe('Soft cuisine preferences: {"asian": 3} = prefer at least 3 Asian dishes'),
+      },
     },
     async ({
       days,
@@ -486,22 +521,14 @@ export function registerShoppingTools(server: McpServer): void {
           );
         }
 
-        const parts: string[] = [];
-        parts.push(`# ${days}-day meal plan (${householdSize} people)\n`);
-
         const basket = calculateBasketCost(bestPlan.recipes);
-        parts.push(`Estimated basket: ~${basket.totalCost} ${cur}`);
-        if (basket.sharedSavings > 0) {
-          parts.push(`Shared ingredient savings: ~${basket.sharedSavings} ${cur}`);
-        }
-        parts.push("");
-
-        for (let i = 0; i < bestPlan.recipes.length; i++) {
-          const r = bestPlan.recipes[i];
-          parts.push(
-            `Day ${i + 1}: ${r.name} (~${r.estimatedCost} ${cur}) [${r.proteinType}, ${r.cuisineType}, ${r.complexity}]`,
-          );
-        }
+        const parts: string[] = formatPlanHeader(
+          bestPlan.recipes,
+          basket,
+          days,
+          householdSize,
+          cur,
+        );
 
         // Generate shopping list for the planned recipes
         const allRecipes = await store.getRecipes();
@@ -513,8 +540,19 @@ export function registerShoppingTools(server: McpServer): void {
         const shoppingList = await buildShoppingList(plannedRecipes, householdSize, cachedDeals);
         parts.push(shoppingList);
 
+        // Structured payload for the MCP Apps meal-plan widget. Backward
+        // compatible: text content is unchanged for non-widget hosts.
+        const mealPlan = buildMealPlanData(
+          bestPlan.recipes,
+          basket,
+          householdSize,
+          cur,
+          locale.currencySymbol,
+        );
+
         return {
           content: [{ type: "text" as const, text: parts.join("\n") }],
+          structuredContent: mealPlan as unknown as Record<string, unknown>,
         };
       } catch (err) {
         return errorResult(`Failed to plan: ${err instanceof Error ? err.message : err}`);

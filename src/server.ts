@@ -1,9 +1,12 @@
+import { createServer as createHttpServer, type IncomingMessage } from "node:http";
 import { createRequire } from "node:module";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { registerPrompts } from "./prompts.js";
 import { registerDealTools } from "./tools/deals.js";
 import { registerHouseholdTools } from "./tools/household.js";
+import { registerMealPlanWidget } from "./tools/meal-plan-widget.js";
 import { registerRecipeTools } from "./tools/recipes.js";
 import { registerScoringTools } from "./tools/scoring.js";
 import { registerShoppingTools } from "./tools/shopping.js";
@@ -14,13 +17,19 @@ const { version: SERVER_VERSION } = require("../package.json") as {
   version: string;
 };
 
-const server = new McpServer(
-  {
-    name: "tilbudstrolden",
-    version: SERVER_VERSION,
-  },
-  {
-    instructions: `# TilbudsTrolden MCP - Nordic Grocery Deal Hunter
+/**
+ * Build a fully configured server instance (all tools, prompts, and the
+ * meal-plan widget resource). A factory so the stateless HTTP transport can
+ * spin up a fresh instance per request; stdio mode calls it once.
+ */
+export function createServer(): McpServer {
+  const server = new McpServer(
+    {
+      name: "tilbudstrolden",
+      version: SERVER_VERSION,
+    },
+    {
+      instructions: `# TilbudsTrolden MCP - Nordic Grocery Deal Hunter
 
 Find grocery deals across Denmark, Norway, Sweden, and Finland via etilbudsavis.dk. Score recipes against current deals, plan weekly meals, and generate deal-optimized shopping lists.
 
@@ -78,18 +87,102 @@ Common queries:
 - Deals expiring within 2 days are flagged automatically
 - Low-confidence ingredient matches are surfaced separately; verify before relying on them
 `,
-  },
-);
+    },
+  );
 
-registerPrompts(server);
-registerDealTools(server);
-registerHouseholdTools(server);
-registerRecipeTools(server);
-registerScoringTools(server);
-registerTrackingTools(server);
-registerShoppingTools(server);
+  registerPrompts(server);
+  registerDealTools(server);
+  registerHouseholdTools(server);
+  registerRecipeTools(server);
+  registerScoringTools(server);
+  registerTrackingTools(server);
+  registerShoppingTools(server);
+  registerMealPlanWidget(server);
+
+  return server;
+}
+
+/** Read a request body to a string (empty string when there is no body). */
+function readBody(req: IncomingMessage): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    req.on("data", (chunk) => chunks.push(chunk as Buffer));
+    req.on("end", () => resolve(Buffer.concat(chunks).toString("utf-8")));
+    req.on("error", reject);
+  });
+}
+
+/**
+ * Serve the MCP server over Streamable HTTP (stateless). A fresh server +
+ * transport is created per request, which is the SDK's recommended stateless
+ * pattern and is all the widget render path (ext-apps basic-host / Claude
+ * custom connector) needs. Additive: the default transport is still stdio.
+ */
+async function startHttp(port: number): Promise<void> {
+  const httpServer = createHttpServer(async (req, res) => {
+    // Permissive CORS so browser-based hosts (basic-host) can reach the server.
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader(
+      "Access-Control-Allow-Headers",
+      "Content-Type, mcp-session-id, mcp-protocol-version",
+    );
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
+    res.setHeader("Access-Control-Expose-Headers", "mcp-session-id");
+
+    if (req.method === "OPTIONS") {
+      res.writeHead(204);
+      res.end();
+      return;
+    }
+
+    const url = req.url ?? "";
+    if (!url.startsWith("/mcp")) {
+      res.writeHead(404, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Not found. MCP endpoint is /mcp." }));
+      return;
+    }
+
+    try {
+      const raw = await readBody(req);
+      const body = raw.length > 0 ? JSON.parse(raw) : undefined;
+      const server = createServer();
+      const transport = new StreamableHTTPServerTransport({
+        sessionIdGenerator: undefined,
+      });
+      res.on("close", () => {
+        transport.close();
+        server.close();
+      });
+      await server.connect(transport);
+      await transport.handleRequest(req, res, body);
+    } catch (err) {
+      console.error("HTTP request error:", err);
+      if (!res.headersSent) {
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "Internal server error" }));
+      }
+    }
+  });
+
+  httpServer.listen(port, () => {
+    console.error(
+      `TilbudsTrolden MCP server v${SERVER_VERSION} running on Streamable HTTP at http://localhost:${port}/mcp`,
+    );
+  });
+}
 
 async function main() {
+  const httpFlag = process.argv.includes("--http");
+  const portEnv = process.env.PORT;
+  const useHttp = httpFlag || portEnv !== undefined;
+
+  if (useHttp) {
+    const port = portEnv ? Number.parseInt(portEnv, 10) : 3001;
+    await startHttp(port);
+    return;
+  }
+
+  const server = createServer();
   const transport = new StdioServerTransport();
   await server.connect(transport);
   console.error(`TilbudsTrolden MCP server v${SERVER_VERSION} running on stdio`);
