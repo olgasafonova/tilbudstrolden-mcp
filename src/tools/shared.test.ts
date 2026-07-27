@@ -60,7 +60,9 @@ describe("errorResult", () => {
   it("marks the result as an error and carries the message as text", () => {
     const result = errorResult("No preferred stores configured.");
     expect(result.isError).toBe(true);
-    expect(result.content).toEqual([{ type: "text", text: "No preferred stores configured." }]);
+    expect(result.content).toEqual([
+      { type: "text", text: "No preferred stores configured." },
+    ]);
   });
 });
 
@@ -109,7 +111,9 @@ describe("formatOffer", () => {
 
   it("omits unit price and previous price when absent", () => {
     const text = formatOffer(makeOffer({ pricePerUnit: null, prePrice: null }));
-    expect(text).toBe("Hakket oksekød 8-12% - 45 DKK @ Netto valid until 2026-06-30");
+    expect(text).toBe(
+      "Hakket oksekød 8-12% - 45 DKK @ Netto valid until 2026-06-30",
+    );
   });
 
   it("appends the expiry tag for deals expiring soon", () => {
@@ -118,7 +122,9 @@ describe("formatOffer", () => {
   });
 
   it("renders a missing expiry date as unknown", () => {
-    const text = formatOffer(makeOffer({ validUntil: null as unknown as string }));
+    const text = formatOffer(
+      makeOffer({ validUntil: null as unknown as string }),
+    );
     expect(text).toContain("valid until unknown");
     expect(text).not.toContain("[EXPIR");
   });
@@ -150,26 +156,28 @@ describe("getKnownStores", () => {
 });
 
 describe("getActiveLocale", () => {
-  it("resolves the locale from the stored household country", async () => {
+  it.each([
+    {
+      label: "resolves the locale from the stored household country",
+      stored: "SE",
+      wantCountry: "SE",
+      wantCurrency: "SEK",
+    },
+    {
+      label: "falls back to DK when the stored country is unrecognised",
+      stored: "XX",
+      wantCountry: "DK",
+      wantCurrency: "DKK",
+    },
+  ])("$label", async ({ stored, wantCountry, wantCurrency }) => {
     vi.mocked(store.getHousehold).mockResolvedValue({
       people: [],
       stores: [],
       defaultServings: 2,
-      country: "SE",
+      country: stored,
     });
     const locale = await getActiveLocale();
-    expect(locale.country).toBe("SE");
-    expect(locale.currency).toBe("SEK");
-  });
-
-  it("falls back to DK when the stored country is unrecognised", async () => {
-    vi.mocked(store.getHousehold).mockResolvedValue({
-      people: [],
-      stores: [],
-      defaultServings: 2,
-      country: "XX",
-    });
-    const locale = await getActiveLocale();
-    expect(locale.country).toBe("DK");
+    expect(locale.country).toBe(wantCountry);
+    expect(locale.currency).toBe(wantCurrency);
   });
 });
