@@ -41,6 +41,7 @@
     "format": "biome format --write src/",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
     "prepublishOnly": "npm run build"
   },
@@ -54,6 +55,7 @@
   "devDependencies": {
     "@biomejs/biome": "^2.4.9",
     "@types/node": "^25.5.0",
+    "@vitest/coverage-v8": "^4.1.10",
     "tsx": "^4.0.0",
     "typescript": "^5.3.0",
     "vitest": "^4.1.2"
