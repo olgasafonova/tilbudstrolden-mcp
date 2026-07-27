@@ -60,9 +60,7 @@ describe("errorResult", () => {
   it("marks the result as an error and carries the message as text", () => {
     const result = errorResult("No preferred stores configured.");
     expect(result.isError).toBe(true);
-    expect(result.content).toEqual([
-      { type: "text", text: "No preferred stores configured." },
-    ]);
+    expect(result.content).toEqual([{ type: "text", text: "No preferred stores configured." }]);
   });
 });
 
@@ -111,9 +109,7 @@ describe("formatOffer", () => {
 
   it("omits unit price and previous price when absent", () => {
     const text = formatOffer(makeOffer({ pricePerUnit: null, prePrice: null }));
-    expect(text).toBe(
-      "Hakket oksekød 8-12% - 45 DKK @ Netto valid until 2026-06-30",
-    );
+    expect(text).toBe("Hakket oksekød 8-12% - 45 DKK @ Netto valid until 2026-06-30");
   });
 
   it("appends the expiry tag for deals expiring soon", () => {
@@ -122,9 +118,7 @@ describe("formatOffer", () => {
   });
 
   it("renders a missing expiry date as unknown", () => {
-    const text = formatOffer(
-      makeOffer({ validUntil: null as unknown as string }),
-    );
+    const text = formatOffer(makeOffer({ validUntil: null as unknown as string }));
     expect(text).toContain("valid until unknown");
     expect(text).not.toContain("[EXPIR");
   });
