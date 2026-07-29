@@ -1,7 +1,7 @@
 {
-  "schema_version": 1,
+  "schema_version": 3,
   "generated_at": "2026-04-25T16:30:00Z",
-  "deslop_version": "2.1.2",
+  "deslop_version": "2.3.0",
   "scores": {
     "file_health": 75.0,
     "test_coverage": 20.0,
@@ -16,67 +16,89 @@
       "detector": "file_health",
       "severity": "critical",
       "key": "src/default-recipes.ts",
-      "summary": "src/default-recipes.ts (2,370 LOC; data file, zero functions)"
+      "summary": "src/default-recipes.ts (2,370 LOC; data file, zero functions)",
+      "fingerprint": "sha256:8e36c7dc1de7f6d2ddc18803443e4994d1bbca30569971712a3e5c00d8493f38",
+      "id": "8e36"
     },
     {
       "detector": "file_health",
       "severity": "critical",
       "key": "src/server.ts",
-      "summary": "src/server.ts (1,553 LOC; MCP server entry — real bloat)"
+      "summary": "src/server.ts (1,553 LOC; MCP server entry \u2014 real bloat)",
+      "fingerprint": "sha256:b5c53a59f996a3d7e7839a09f9246430c736bcff94b72e9fdf8243e14842db1c",
+      "id": "b5c5"
     },
     {
       "detector": "file_health",
       "severity": "high",
       "key": "src/integration.test.ts",
-      "summary": "src/integration.test.ts (992 LOC; integration test suite)"
+      "summary": "src/integration.test.ts (992 LOC; integration test suite)",
+      "fingerprint": "sha256:65de5f720835b8f270930f0fe9962f379e3c1f7b3994ac4c2dfafd3a68f67afd",
+      "id": "65de"
     },
     {
       "detector": "file_health",
       "severity": "high",
       "key": "src/scenarios.test.ts",
-      "summary": "src/scenarios.test.ts (929 LOC)"
+      "summary": "src/scenarios.test.ts (929 LOC)",
+      "fingerprint": "sha256:7378963b1b1bb52e80acadfc02f394bf5fc0c60b3bd0b94cd0d90690ac883f23",
+      "id": "7378"
     },
     {
       "detector": "file_health",
       "severity": "high",
       "key": "src/scoring.test.ts",
-      "summary": "src/scoring.test.ts (911 LOC)"
+      "summary": "src/scoring.test.ts (911 LOC)",
+      "fingerprint": "sha256:09a986f659603e41b1031e86b741f6cbd7bf2299df23a30728fa132ba5086c69",
+      "id": "09a9"
     },
     {
       "detector": "file_health",
       "severity": "high",
       "key": "src/scoring.ts",
-      "summary": "src/scoring.ts (989 LOC; scoring algorithm — real)"
+      "summary": "src/scoring.ts (989 LOC; scoring algorithm \u2014 real)",
+      "fingerprint": "sha256:5c8e0e0b7ab084f52ff97ab80b2b36ce115fefc77d4d4cc361810a42633a8b02",
+      "id": "5c8e"
     },
     {
       "detector": "file_health",
       "severity": "warning",
       "key": "src/locales.ts",
-      "summary": "src/locales.ts (688 LOC; locale data + 2 helpers)"
+      "summary": "src/locales.ts (688 LOC; locale data + 2 helpers)",
+      "fingerprint": "sha256:9b94b3f78eb134d4c2c7eb2fce85740c0dae6f899c576c63747cae5cfcb16964",
+      "id": "9b94"
     },
     {
       "detector": "test_coverage",
       "severity": "warning",
       "key": "src/api.ts",
-      "summary": "src/api.ts has no matching test file (3 funcs; possibly covered by integration.test.ts)"
+      "summary": "src/api.ts has no matching test file (3 funcs; possibly covered by integration.test.ts)",
+      "fingerprint": "sha256:d47e98594dc69494edb18eba1996f4b5ac41cead511c5b5ed48809b2e8157bfd",
+      "id": "d47e"
     },
     {
       "detector": "test_coverage",
       "severity": "warning",
       "key": "src/locales.ts",
-      "summary": "src/locales.ts has no matching test file (2 funcs)"
+      "summary": "src/locales.ts has no matching test file (2 funcs)",
+      "fingerprint": "sha256:6677895566bec29d974c10a72500ca562b2a6c831e7493816f9e09cf5ff16286",
+      "id": "6677"
     },
     {
       "detector": "test_coverage",
       "severity": "warning",
       "key": "src/server.ts",
-      "summary": "src/server.ts has no matching test file (13 funcs; covered by integration.test.ts and scenarios.test.ts in practice)"
+      "summary": "src/server.ts has no matching test file (13 funcs; covered by integration.test.ts and scenarios.test.ts in practice)",
+      "fingerprint": "sha256:2f5833dcc6963437c79a984498c0deb485541486668c5bad2e8d330a66fc7da0",
+      "id": "2f58"
     },
     {
       "detector": "test_coverage",
       "severity": "warning",
       "key": "src/store.ts",
-      "summary": "src/store.ts has no matching test file (3 funcs; possibly covered by integration.test.ts)"
+      "summary": "src/store.ts has no matching test file (3 funcs; possibly covered by integration.test.ts)",
+      "fingerprint": "sha256:9e6d55309258c865805e8acd963461074a3708d2b1b3e1b42a4309bdf2605b40",
+      "id": "9e6d"
     }
   ]
 }
