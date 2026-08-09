@@ -3,6 +3,83 @@ import { z } from "zod";
 import { getLocale } from "../locales.js";
 import * as store from "../store.js";
 
+/** The currency symbol configured for the household's country */
+async function householdCurrencySymbol(): Promise<string> {
+  const household = await store.getHousehold();
+  return getLocale(household.country).currencySymbol;
+}
+
+function textResult(text: string) {
+  return { content: [{ type: "text" as const, text }] };
+}
+
+interface LogMealArgs {
+  date: string;
+  recipe: string;
+  people: string[];
+}
+
+async function handleLogMeal({ date, recipe, people }: LogMealArgs) {
+  await store.logMeal({ date, recipe, people });
+  return textResult(`Logged: ${recipe} on ${date} for ${people.join(", ")}.`);
+}
+
+async function handleGetMealHistory({ weeks }: { weeks: number }) {
+  const history = await store.getMealHistory(weeks);
+  if (history.length === 0) {
+    return textResult("No meal history yet. Use log_meal to start tracking.");
+  }
+  const lines = history.map((m) => `- ${m.date}: ${m.recipe} (${m.people.join(", ")})`);
+  return textResult(
+    `Meal history (last ${weeks} weeks, ${history.length} meals):\n\n${lines.join("\n")}`,
+  );
+}
+
+interface LogSpendArgs {
+  date: string;
+  store: string;
+  estimatedTotal: number;
+  items: number;
+  notes: string;
+}
+
+async function handleLogSpend({
+  date,
+  store: storeName,
+  estimatedTotal,
+  items,
+  notes,
+}: LogSpendArgs) {
+  await store.logSpend({
+    date,
+    store: storeName,
+    estimatedTotal,
+    items,
+    notes,
+  });
+  const sym = await householdCurrencySymbol();
+  return textResult(
+    `Logged: ${estimatedTotal} ${sym} at ${storeName} on ${date} (${items} items).`,
+  );
+}
+
+async function handleGetSpendLog({ weeks }: { weeks: number }) {
+  const log = await store.getSpendLog(weeks);
+  if (log.length === 0) {
+    return textResult("No spending recorded yet. Use log_spend to start tracking.");
+  }
+  const total = log.reduce((sum, s) => sum + s.estimatedTotal, 0);
+  const avgPerWeek = total / weeks;
+  const sym = await householdCurrencySymbol();
+  const lines = log.map(
+    (s) =>
+      `- ${s.date}: ${s.estimatedTotal} ${sym} @ ${s.store} (${s.items} items)${s.notes ? ` - ${s.notes}` : ""}`,
+  );
+  return textResult(
+    `Spending (last ${weeks} weeks):\n\n${lines.join("\n")}\n\nTotal: ${total.toFixed(0)} ${sym} | Avg/week: ${avgPerWeek.toFixed(0)} ${sym}`,
+  );
+}
+
 export function registerTrackingTools(server: McpServer): void {
   server.tool(
     "log_meal",
@@ -12,17 +89,7 @@ export function registerTrackingTools(server: McpServer): void {
       recipe: z.string().describe("Recipe name"),
       people: z.array(z.string()).describe("Who ate"),
     },
-    async ({ date, recipe, people }) => {
-      await store.logMeal({ date, recipe, people });
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: `Logged: ${recipe} on ${date} for ${people.join(", ")}.`,
-          },
-        ],
-      };
-    },
+    handleLogMeal,
   );
 
   server.tool(
@@ -31,28 +98,7 @@ export function registerTrackingTools(server: McpServer): void {
     {
       weeks: z.number().optional().default(4).describe("Weeks back (default 4)"),
     },
-    async ({ weeks }) => {
-      const history = await store.getMealHistory(weeks);
-      if (history.length === 0) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: "No meal history yet. Use log_meal to start tracking.",
-            },
-          ],
-        };
-      }
-      const lines = history.map((m) => `- ${m.date}: ${m.recipe} (${m.people.join(", ")})`);
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: `Meal history (last ${weeks} weeks, ${history.length} meals):\n\n${lines.join("\n")}`,
-          },
-        ],
-      };
-    },
+    handleGetMealHistory,
   );
 
   server.tool(
@@ -65,25 +111,7 @@ export function registerTrackingTools(server: McpServer): void {
       items: z.number().describe("Items bought"),
       notes: z.string().optional().default(""),
     },
-    async ({ date, store: storeName, estimatedTotal, items, notes }) => {
-      await store.logSpend({
-        date,
-        store: storeName,
-        estimatedTotal,
-        items,
-        notes,
-      });
-      const household = await store.getHousehold();
-      const sym = getLocale(household.country).currencySymbol;
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: `Logged: ${estimatedTotal} ${sym} at ${storeName} on ${date} (${items} items).`,
-          },
-        ],
-      };
-    },
+    handleLogSpend,
   );
 
   server.tool(
@@ -92,34 +120,6 @@ export function registerTrackingTools(server: McpServer): void {
     {
       weeks: z.number().optional().default(8).describe("Weeks back (default 8)"),
     },
-    async ({ weeks }) => {
-      const log = await store.getSpendLog(weeks);
-      if (log.length === 0) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: "No spending recorded yet. Use log_spend to start tracking.",
-            },
-          ],
-        };
-      }
-      const total = log.reduce((sum, s) => sum + s.estimatedTotal, 0);
-      const avgPerWeek = total / weeks;
-      const household = await store.getHousehold();
-      const sym = getLocale(household.country).currencySymbol;
-      const lines = log.map(
-        (s) =>
-          `- ${s.date}: ${s.estimatedTotal} ${sym} @ ${s.store} (${s.items} items)${s.notes ? ` - ${s.notes}` : ""}`,
-      );
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: `Spending (last ${weeks} weeks):\n\n${lines.join("\n")}\n\nTotal: ${total.toFixed(0)} ${sym} | Avg/week: ${avgPerWeek.toFixed(0)} ${sym}`,
-          },
-        ],
-      };
-    },
+    handleGetSpendLog,
   );
 }
