@@ -73,38 +73,136 @@ type StoreOffersResult = {
   error: boolean;
 };
 
+/** The offers expiring within two days, capped at the five most urgent to show. */
+function formatExpiringSoon(offers: Offer[]): string[] {
+  const expiringSoon = offers.filter((o) => daysUntilExpiry(o.validUntil) <= 2);
+  if (expiringSoon.length === 0) return [];
+  return [
+    `\n⏰ Expiring soon (${expiringSoon.length}):`,
+    ...expiringSoon.slice(0, 5).map((o) => `- ${formatOffer(o)}`),
+  ];
+}
+
+type DiscountedOffer = Offer & { prePrice: number; price: number };
+
+/** The ten biggest absolute discounts, largest saving first. */
+function topSavings(offers: Offer[]): DiscountedOffer[] {
+  return offers
+    .filter(
+      (o): o is DiscountedOffer => o.prePrice !== null && o.price !== null && o.prePrice > o.price,
+    )
+    .sort((a, b) => b.prePrice - b.price - (a.prePrice - a.price))
+    .slice(0, 10);
+}
+
+function formatSavings(offers: Offer[], fallbackCurrency: string): string[] {
+  const withSavings = topSavings(offers);
+  if (withSavings.length === 0) return [];
+  return [
+    `\nBest savings:`,
+    ...withSavings.map((o) => {
+      const saved = Math.round(o.prePrice - o.price);
+      const cur = o.currency || fallbackCurrency;
+      return `- ${o.heading}: ${o.price} ${cur} (save ${saved} ${cur}) ${o.pricePerUnit ? `(${o.pricePerUnit})` : ""}`;
+    }),
+  ];
+}
+
 /** Render one preferred store's section: expiring-soon flags plus top deals by savings. */
 function formatStoreSection(result: StoreOffersResult, fallbackCurrency: string): string[] {
   const { store: s, offers, error } = result;
   if (error) return [`## ${s.name}: failed to fetch offers\n`];
 
-  const parts: string[] = [`## ${s.name} (${offers.length} offers)`];
+  return [
+    `## ${s.name} (${offers.length} offers)`,
+    ...formatExpiringSoon(offers),
+    ...formatSavings(offers, fallbackCurrency),
+    "",
+  ];
+}
 
-  const expiringSoon = offers.filter((o) => daysUntilExpiry(o.validUntil) <= 2);
-  if (expiringSoon.length > 0) {
-    parts.push(`\n⏰ Expiring soon (${expiringSoon.length}):`);
-    for (const o of expiringSoon.slice(0, 5)) parts.push(`- ${formatOffer(o)}`);
+function textResult(text: string) {
+  return { content: [{ type: "text" as const, text }] };
+}
+
+async function handleSearchDeals({ query, limit }: { query: string; limit: number }) {
+  try {
+    const locale = await getActiveLocale();
+    const offers = await searchDeals(query.trim(), limit, locale.country);
+    return textResult(`Found ${offers.length} deals for "${query}":\n\n${formatOfferList(offers)}`);
+  } catch (err) {
+    return errorResult(`Failed to search deals: ${err instanceof Error ? err.message : err}`);
   }
+}
 
-  const withSavings = offers
-    .filter(
-      (o): o is Offer & { prePrice: number; price: number } =>
-        o.prePrice !== null && o.price !== null && o.prePrice > o.price,
-    )
-    .sort((a, b) => b.prePrice - b.price - (a.prePrice - a.price))
-    .slice(0, 10);
-  if (withSavings.length > 0) {
-    parts.push(`\nBest savings:`);
-    for (const o of withSavings) {
-      const saved = Math.round(o.prePrice - o.price);
-      const cur = o.currency || fallbackCurrency;
-      parts.push(
-        `- ${o.heading}: ${o.price} ${cur} (save ${saved} ${cur}) ${o.pricePerUnit ? `(${o.pricePerUnit})` : ""}`,
+async function handleGetStoreOffers({ store: storeName, limit }: { store: string; limit: number }) {
+  try {
+    const locale = await getActiveLocale();
+    const knownStores = getKnownStores(locale);
+    const dealerId = knownStores[storeName.trim().toLowerCase()] ?? storeName.trim();
+    const offers = await getStoreOffers(dealerId, limit);
+    const name = offers[0]?.store ?? storeName;
+    return textResult(`${offers.length} current offers at ${name}:\n\n${formatOfferList(offers)}`);
+  } catch (err) {
+    return errorResult(`Failed to get store offers: ${err instanceof Error ? err.message : err}`);
+  }
+}
+
+async function handleListStores({ query, all }: { query?: string; all: boolean }) {
+  try {
+    const locale = await getActiveLocale();
+    if (!all) return textResult(listKnownGroceryStores(locale, query));
+    return textResult(
+      locale.country === "DK"
+        ? await listFullDirectory(locale, query)
+        : listKnownStoresAll(locale, query),
+    );
+  } catch (err) {
+    return errorResult(`Failed to list stores: ${err instanceof Error ? err.message : err}`);
+  }
+}
+
+/** Fetch every preferred store's offers in parallel, marking the ones that failed. */
+async function fetchPreferredStoreOffers(
+  stores: store.StorePreference[],
+  limit: number,
+): Promise<StoreOffersResult[]> {
+  return Promise.all(
+    stores.map(async (s) => {
+      try {
+        const offers = await getStoreOffers(s.dealerId, limit);
+        return { store: s, offers, error: false };
+      } catch {
+        return { store: s, offers: [] as Offer[], error: true };
+      }
+    }),
+  );
+}
+
+async function handleDealsThisWeek({ limit }: { limit: number }) {
+  try {
+    const household = await store.getHousehold();
+    const locale = getLocale(household.country);
+    if (household.stores.length === 0) {
+      return errorResult(
+        "No preferred stores configured. Use update_household to add stores first (use list_stores to find dealer IDs).",
       );
     }
+
+    const sorted = household.stores.sort((a, b) => a.priority - b.priority);
+    const storeResults = await fetchPreferredStoreOffers(sorted, limit);
+
+    const parts: string[] = [
+      `# Deals this week from ${household.stores.length} preferred stores\n`,
+    ];
+    for (const result of storeResults) {
+      parts.push(...formatStoreSection(result, locale.currency));
+    }
+
+    return textResult(parts.join("\n"));
+  } catch (err) {
+    return errorResult(`Failed to fetch deals: ${err instanceof Error ? err.message : err}`);
   }
-  parts.push("");
-  return parts;
 }
 
 export function registerDealTools(server: McpServer): void {
@@ -119,22 +217,7 @@ export function registerDealTools(server: McpServer): void {
         ),
       limit: z.number().optional().default(20).describe("Max results (default 20)"),
     },
-    async ({ query, limit }) => {
-      try {
-        const locale = await getActiveLocale();
-        const offers = await searchDeals(query.trim(), limit, locale.country);
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: `Found ${offers.length} deals for "${query}":\n\n${formatOfferList(offers)}`,
-            },
-          ],
-        };
-      } catch (err) {
-        return errorResult(`Failed to search deals: ${err instanceof Error ? err.message : err}`);
-      }
-    },
+    handleSearchDeals,
   );
 
   server.tool(
@@ -148,27 +231,7 @@ export function registerDealTools(server: McpServer): void {
         ),
       limit: z.number().optional().default(50).describe("Max results"),
     },
-    async ({ store: storeName, limit }) => {
-      try {
-        const locale = await getActiveLocale();
-        const knownStores = getKnownStores(locale);
-        const dealerId = knownStores[storeName.trim().toLowerCase()] ?? storeName.trim();
-        const offers = await getStoreOffers(dealerId, limit);
-        const name = offers[0]?.store ?? storeName;
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: `${offers.length} current offers at ${name}:\n\n${formatOfferList(offers)}`,
-            },
-          ],
-        };
-      } catch (err) {
-        return errorResult(
-          `Failed to get store offers: ${err instanceof Error ? err.message : err}`,
-        );
-      }
-    },
+    handleGetStoreOffers,
   );
 
   server.tool(
@@ -178,25 +241,7 @@ export function registerDealTools(server: McpServer): void {
       query: z.string().optional().describe("Filter by name"),
       all: z.boolean().optional().default(false).describe("Include non-grocery stores too"),
     },
-    async ({ query, all }) => {
-      try {
-        const locale = await getActiveLocale();
-        let text: string;
-        if (all) {
-          text =
-            locale.country === "DK"
-              ? await listFullDirectory(locale, query)
-              : listKnownStoresAll(locale, query);
-        } else {
-          text = listKnownGroceryStores(locale, query);
-        }
-        return {
-          content: [{ type: "text" as const, text }],
-        };
-      } catch (err) {
-        return errorResult(`Failed to list stores: ${err instanceof Error ? err.message : err}`);
-      }
-    },
+    handleListStores,
   );
 
   server.tool(
@@ -205,43 +250,6 @@ export function registerDealTools(server: McpServer): void {
     {
       limit: z.number().optional().default(30).describe("Max deals per store (default 30)"),
     },
-    async ({ limit }) => {
-      try {
-        const household = await store.getHousehold();
-        const locale = getLocale(household.country);
-        if (household.stores.length === 0) {
-          return errorResult(
-            "No preferred stores configured. Use update_household to add stores first (use list_stores to find dealer IDs).",
-          );
-        }
-
-        const sorted = household.stores.sort((a, b) => a.priority - b.priority);
-
-        // Fetch all stores in parallel
-        const storeResults = await Promise.all(
-          sorted.map(async (s) => {
-            try {
-              const offers = await getStoreOffers(s.dealerId, limit);
-              return { store: s, offers, error: false };
-            } catch {
-              return { store: s, offers: [] as Offer[], error: true };
-            }
-          }),
-        );
-
-        const parts: string[] = [
-          `# Deals this week from ${household.stores.length} preferred stores\n`,
-        ];
-        for (const result of storeResults) {
-          parts.push(...formatStoreSection(result, locale.currency));
-        }
-
-        return {
-          content: [{ type: "text" as const, text: parts.join("\n") }],
-        };
-      } catch (err) {
-        return errorResult(`Failed to fetch deals: ${err instanceof Error ? err.message : err}`);
-      }
-    },
+    handleDealsThisWeek,
   );
 }
