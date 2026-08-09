@@ -194,13 +194,19 @@ function uncertainAlternativesLine(
   return `${ing.name}: picked "${best.heading}" but also found: ${alts}`;
 }
 
+/** Everything a single ingredient needs to be matched against deals and priced */
+interface ShoppingContext {
+  dealMap: Map<string, Offer[]>;
+  preferredStores: Set<string>;
+  locale: ReturnType<typeof getLocale>;
+  householdSize: number;
+}
+
 function processIngredientForList(
   ing: AggregatedIngredient,
-  dealMap: Map<string, Offer[]>,
-  preferredStores: Set<string>,
-  locale: ReturnType<typeof getLocale>,
-  householdSize: number,
+  ctx: ShoppingContext,
 ): IngredientShoppingResult {
+  const { dealMap, preferredStores, locale, householdSize } = ctx;
   const result = findBestDeal(ing, dealMap, preferredStores, locale);
   const { displayQty, aggregated } = buildDisplayQuantity(ing, householdSize);
 
@@ -267,7 +273,7 @@ async function buildShoppingList(
   let grandTotal = 0;
 
   for (const [, ing] of allIngredients) {
-    const r = processIngredientForList(ing, dealMap, preferredStores, locale, householdSize);
+    const r = processIngredientForList(ing, { dealMap, preferredStores, locale, householdSize });
     grandTotal += r.cost;
     if (r.expiring) expiringWarnings.push(r.expiring);
     if (r.uncertain) uncertainItems.push(r.uncertain);
