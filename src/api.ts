@@ -120,12 +120,23 @@ function readStore(raw: RawOffer): string {
   return raw.branding?.name ?? raw.dealer?.name ?? "Unknown";
 }
 
+/** A positive size with a unit symbol, e.g. 500 g — enough to price per kg/L. */
+function hasMeasuredQuantity(
+  q: QuantityFields,
+): q is QuantityFields & { quantity: number; unit: string } {
+  return q.quantity !== null && q.quantity > 0 && q.unit !== null && q.unit !== "";
+}
+
+/** A positive piece count, e.g. eggs sold per piece. */
+function hasPieceCount(q: QuantityFields): q is QuantityFields & { pieces: number } {
+  return q.pieces !== null && q.pieces > 0;
+}
+
 function computePricePerUnit(price: number, q: QuantityFields, sym: string): string | null {
-  if (q.quantity !== null && q.quantity > 0 && q.unit) {
+  if (hasMeasuredQuantity(q)) {
     return unitPricePerUnit(price, q.quantity, q.unit, sym);
   }
-  // Pieces-based pricing (e.g. eggs sold per piece)
-  if (q.pieces !== null && q.pieces > 0) {
+  if (hasPieceCount(q)) {
     return `${(price / q.pieces).toFixed(2)} ${sym}/pcs`;
   }
   return null;
@@ -155,33 +166,45 @@ function parseOffer(raw: RawOffer): Offer {
   };
 }
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** Exponential backoff: 500ms, 1s, 2s... */
+const backoffDelay = (attempt: number) => RETRY_BASE_MS * 2 ** attempt;
+
+type FetchAttempt<T> = { retryable: false; body: T } | { retryable: true; error: Error };
+
+/**
+ * One request attempt. Rate limits and server errors come back as retryable;
+ * any other non-OK status throws, since retrying will not help.
+ */
+async function attemptFetch<T>(url: string): Promise<FetchAttempt<T>> {
+  const res = await fetch(url, {
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    headers: { "User-Agent": USER_AGENT },
+  });
+
+  if (res.status === 429 || res.status >= 500) {
+    return { retryable: true, error: new Error(`API returned ${res.status}`) };
+  }
+  if (!res.ok) {
+    throw new Error(`API request failed (${res.status})`);
+  }
+  return { retryable: false, body: (await res.json()) as T };
+}
+
 async function fetchJson<T>(url: string): Promise<T> {
   let lastError: Error | null = null;
 
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     try {
-      const res = await fetch(url, {
-        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-        headers: { "User-Agent": USER_AGENT },
-      });
-
-      if (res.status === 429 || res.status >= 500) {
-        const delay = RETRY_BASE_MS * 2 ** attempt;
-        await new Promise((r) => setTimeout(r, delay));
-        lastError = new Error(`API returned ${res.status}`);
-        continue;
-      }
-
-      if (!res.ok) {
-        throw new Error(`API request failed (${res.status})`);
-      }
-
-      return (await res.json()) as T;
+      const result = await attemptFetch<T>(url);
+      if (!result.retryable) return result.body;
+      lastError = result.error;
+      await sleep(backoffDelay(attempt));
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err));
       if (attempt < MAX_RETRIES - 1) {
-        const delay = RETRY_BASE_MS * 2 ** attempt;
-        await new Promise((r) => setTimeout(r, delay));
+        await sleep(backoffDelay(attempt));
       }
     }
   }
