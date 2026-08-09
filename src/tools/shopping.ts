@@ -266,36 +266,58 @@ async function buildShoppingList(
 
   const dealMap = await resolveDealMap(existingDealMap, allIngredients, locale);
 
-  const byStore = new Map<string, string[]>();
-  const regularPrice: string[] = [];
-  const uncertainItems: string[] = [];
-  const expiringWarnings: string[] = [];
-  let grandTotal = 0;
-
-  for (const [, ing] of allIngredients) {
-    const r = processIngredientForList(ing, { dealMap, preferredStores, locale, householdSize });
-    grandTotal += r.cost;
-    if (r.expiring) expiringWarnings.push(r.expiring);
-    if (r.uncertain) uncertainItems.push(r.uncertain);
-    if (r.regular) regularPrice.push(r.regular);
-    if (r.storeName && r.storeLine) {
-      const storeList = byStore.get(r.storeName) ?? [];
-      storeList.push(r.storeLine);
-      byStore.set(r.storeName, storeList);
-    }
-  }
+  const tally = tallyIngredients(allIngredients, {
+    dealMap,
+    preferredStores,
+    locale,
+    householdSize,
+  });
 
   return formatShoppingOutput({
+    ...tally,
     selectedRecipes,
     householdSize,
-    grandTotal,
-    byStore,
-    regularPrice,
-    uncertainItems,
-    expiringWarnings,
     pantry,
     currencySymbol: locale.currencySymbol,
   });
+}
+
+/** Running totals collected while matching each ingredient against the deal map */
+interface ShoppingTally {
+  byStore: Map<string, string[]>;
+  regularPrice: string[];
+  uncertainItems: string[];
+  expiringWarnings: string[];
+  grandTotal: number;
+}
+
+function addToTally(tally: ShoppingTally, r: IngredientShoppingResult): void {
+  tally.grandTotal += r.cost;
+  if (r.expiring) tally.expiringWarnings.push(r.expiring);
+  if (r.uncertain) tally.uncertainItems.push(r.uncertain);
+  if (r.regular) tally.regularPrice.push(r.regular);
+  if (r.storeName && r.storeLine) {
+    const storeList = tally.byStore.get(r.storeName) ?? [];
+    storeList.push(r.storeLine);
+    tally.byStore.set(r.storeName, storeList);
+  }
+}
+
+function tallyIngredients(
+  allIngredients: Map<string, AggregatedIngredient>,
+  ctx: ShoppingContext,
+): ShoppingTally {
+  const tally: ShoppingTally = {
+    byStore: new Map(),
+    regularPrice: [],
+    uncertainItems: [],
+    expiringWarnings: [],
+    grandTotal: 0,
+  };
+  for (const [, ing] of allIngredients) {
+    addToTally(tally, processIngredientForList(ing, ctx));
+  }
+  return tally;
 }
 
 function bulletSection(header: string, items: string[]): string[] {
