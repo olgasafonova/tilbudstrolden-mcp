@@ -1,6 +1,7 @@
 # TilbudsTrolden
 
 [![CI](https://github.com/olgasafonova/tilbudstrolden-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/olgasafonova/tilbudstrolden-mcp/actions/workflows/ci.yml)
+[![CodeScene Average Code Health](https://codescene.io/projects/83415/status-badges/average-code-health)](https://codescene.io/projects/83415)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue)](https://www.typescriptlang.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![MCP](https://img.shields.io/badge/MCP-compatible-green)](https://modelcontextprotocol.io)
