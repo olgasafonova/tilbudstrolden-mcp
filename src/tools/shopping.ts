@@ -194,13 +194,19 @@ function uncertainAlternativesLine(
   return `${ing.name}: picked "${best.heading}" but also found: ${alts}`;
 }
 
+/** Everything a single ingredient needs to be matched against deals and priced */
+interface ShoppingContext {
+  dealMap: Map<string, Offer[]>;
+  preferredStores: Set<string>;
+  locale: ReturnType<typeof getLocale>;
+  householdSize: number;
+}
+
 function processIngredientForList(
   ing: AggregatedIngredient,
-  dealMap: Map<string, Offer[]>,
-  preferredStores: Set<string>,
-  locale: ReturnType<typeof getLocale>,
-  householdSize: number,
+  ctx: ShoppingContext,
 ): IngredientShoppingResult {
+  const { dealMap, preferredStores, locale, householdSize } = ctx;
   const result = findBestDeal(ing, dealMap, preferredStores, locale);
   const { displayQty, aggregated } = buildDisplayQuantity(ing, householdSize);
 
@@ -260,36 +266,58 @@ async function buildShoppingList(
 
   const dealMap = await resolveDealMap(existingDealMap, allIngredients, locale);
 
-  const byStore = new Map<string, string[]>();
-  const regularPrice: string[] = [];
-  const uncertainItems: string[] = [];
-  const expiringWarnings: string[] = [];
-  let grandTotal = 0;
-
-  for (const [, ing] of allIngredients) {
-    const r = processIngredientForList(ing, dealMap, preferredStores, locale, householdSize);
-    grandTotal += r.cost;
-    if (r.expiring) expiringWarnings.push(r.expiring);
-    if (r.uncertain) uncertainItems.push(r.uncertain);
-    if (r.regular) regularPrice.push(r.regular);
-    if (r.storeName && r.storeLine) {
-      const storeList = byStore.get(r.storeName) ?? [];
-      storeList.push(r.storeLine);
-      byStore.set(r.storeName, storeList);
-    }
-  }
+  const tally = tallyIngredients(allIngredients, {
+    dealMap,
+    preferredStores,
+    locale,
+    householdSize,
+  });
 
   return formatShoppingOutput({
+    ...tally,
     selectedRecipes,
     householdSize,
-    grandTotal,
-    byStore,
-    regularPrice,
-    uncertainItems,
-    expiringWarnings,
     pantry,
     currencySymbol: locale.currencySymbol,
   });
+}
+
+/** Running totals collected while matching each ingredient against the deal map */
+interface ShoppingTally {
+  byStore: Map<string, string[]>;
+  regularPrice: string[];
+  uncertainItems: string[];
+  expiringWarnings: string[];
+  grandTotal: number;
+}
+
+function addToTally(tally: ShoppingTally, r: IngredientShoppingResult): void {
+  tally.grandTotal += r.cost;
+  if (r.expiring) tally.expiringWarnings.push(r.expiring);
+  if (r.uncertain) tally.uncertainItems.push(r.uncertain);
+  if (r.regular) tally.regularPrice.push(r.regular);
+  if (r.storeName && r.storeLine) {
+    const storeList = tally.byStore.get(r.storeName) ?? [];
+    storeList.push(r.storeLine);
+    tally.byStore.set(r.storeName, storeList);
+  }
+}
+
+function tallyIngredients(
+  allIngredients: Map<string, AggregatedIngredient>,
+  ctx: ShoppingContext,
+): ShoppingTally {
+  const tally: ShoppingTally = {
+    byStore: new Map(),
+    regularPrice: [],
+    uncertainItems: [],
+    expiringWarnings: [],
+    grandTotal: 0,
+  };
+  for (const [, ing] of allIngredients) {
+    addToTally(tally, processIngredientForList(ing, ctx));
+  }
+  return tally;
 }
 
 function bulletSection(header: string, items: string[]): string[] {
@@ -355,6 +383,141 @@ function formatShoppingOutput(ctx: {
   return parts.join("\n");
 }
 
+interface ShoppingListArgs {
+  recipes: string[];
+  people?: number;
+  excludePantry: boolean;
+}
+
+async function handleGenerateShoppingList({ recipes, people, excludePantry }: ShoppingListArgs) {
+  try {
+    const allRecipes = await store.getRecipes();
+
+    const selectedRecipes = allRecipes.filter((r) =>
+      recipes.some((n) => r.name.toLowerCase() === n.toLowerCase()),
+    );
+
+    if (selectedRecipes.length === 0) {
+      const available = allRecipes.map((r) => r.name).join(", ");
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `No matching recipes found. Available: ${available || "none (add recipes first)"}`,
+          },
+        ],
+      };
+    }
+
+    const household = await store.getHousehold();
+    const householdSize = people ?? (household.people.length || household.defaultServings);
+
+    const text = await buildShoppingList(selectedRecipes, householdSize, undefined, excludePantry);
+    return {
+      content: [{ type: "text" as const, text }],
+    };
+  } catch (err) {
+    return errorResult(
+      `Failed to generate shopping list: ${err instanceof Error ? err.message : err}`,
+    );
+  }
+}
+
+interface PlanArgs {
+  days: number;
+  people?: number;
+  maxPerProtein: number;
+  maxPerCuisine: number;
+  maxSlowDays: number;
+  excludeProteins?: string[];
+  slowOnlyOnDays?: number[];
+  preferCuisines?: Record<string, number>;
+}
+
+/** Render the day-by-day plan header, basket estimate, and one line per day */
+function formatMealPlan(
+  bestPlan: NonNullable<ReturnType<typeof findOptimalWeek>>,
+  days: number,
+  householdSize: number,
+  currency: string,
+): string[] {
+  const parts: string[] = [`# ${days}-day meal plan (${householdSize} people)\n`];
+
+  const basket = calculateBasketCost(bestPlan.recipes);
+  parts.push(`Estimated basket: ~${basket.totalCost} ${currency}`);
+  if (basket.sharedSavings > 0) {
+    parts.push(`Shared ingredient savings: ~${basket.sharedSavings} ${currency}`);
+  }
+  parts.push("");
+
+  for (let i = 0; i < bestPlan.recipes.length; i++) {
+    const r = bestPlan.recipes[i];
+    parts.push(
+      `Day ${i + 1}: ${r.name} (~${r.estimatedCost} ${currency}) [${r.proteinType}, ${r.cuisineType}, ${r.complexity}]`,
+    );
+  }
+
+  return parts;
+}
+
+async function handlePlanAndShop(args: PlanArgs) {
+  try {
+    const { days, people } = args;
+    const household = await store.getHousehold();
+    const locale = getLocale(household.country);
+    const pantry = await store.getPantry();
+    const pantrySet = new Set(pantry.map((p) => p.toLowerCase()));
+    const preferredStores = new Set(household.stores.map((s) => s.name));
+    const householdSize = people ?? (household.people.length || household.defaultServings);
+
+    const { scored, dealMap: cachedDeals } = await scoreAllRecipes(
+      preferredStores,
+      pantrySet,
+      householdSize,
+      locale,
+    );
+
+    if (scored.length < days) {
+      return errorResult(
+        `Need at least ${days} recipes to plan ${days} days, but only ${scored.length} recipes exist. Add more with add_recipe.`,
+      );
+    }
+
+    const bestPlan = findOptimalWeek(scored, days, {
+      maxPerProtein: args.maxPerProtein,
+      maxPerCuisine: args.maxPerCuisine,
+      maxSlowDays: args.maxSlowDays,
+      excludeProteins: args.excludeProteins,
+      slowOnlyOnDays: args.slowOnlyOnDays,
+      preferCuisines: args.preferCuisines,
+      ingredientTags: locale.ingredientTags,
+    });
+
+    if (!bestPlan) {
+      return errorResult(
+        "Could not find a valid meal plan with the variety constraints. Try relaxing maxPerProtein, maxPerCuisine, or maxSlowDays.",
+      );
+    }
+
+    const parts = formatMealPlan(bestPlan, days, householdSize, locale.currency);
+
+    // Generate shopping list for the planned recipes
+    const allRecipes = await store.getRecipes();
+    const plannedRecipes = allRecipes.filter((r) =>
+      bestPlan.recipes.some((p) => p.name.toLowerCase() === r.name.toLowerCase()),
+    );
+
+    parts.push("\n---\n");
+    parts.push(await buildShoppingList(plannedRecipes, householdSize, cachedDeals));
+
+    return {
+      content: [{ type: "text" as const, text: parts.join("\n") }],
+    };
+  } catch (err) {
+    return errorResult(`Failed to plan: ${err instanceof Error ? err.message : err}`);
+  }
+}
+
 export function registerShoppingTools(server: McpServer): void {
   server.tool(
     "generate_shopping_list",
@@ -368,44 +531,7 @@ export function registerShoppingTools(server: McpServer): void {
         .default(true)
         .describe("Skip pantry items (default true)"),
     },
-    async ({ recipes: recipeNames, people, excludePantry }) => {
-      try {
-        const allRecipes = await store.getRecipes();
-
-        const selectedRecipes = allRecipes.filter((r) =>
-          recipeNames.some((n) => r.name.toLowerCase() === n.toLowerCase()),
-        );
-
-        if (selectedRecipes.length === 0) {
-          const available = allRecipes.map((r) => r.name).join(", ");
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: `No matching recipes found. Available: ${available || "none (add recipes first)"}`,
-              },
-            ],
-          };
-        }
-
-        const household = await store.getHousehold();
-        const householdSize = people ?? (household.people.length || household.defaultServings);
-
-        const text = await buildShoppingList(
-          selectedRecipes,
-          householdSize,
-          undefined,
-          excludePantry,
-        );
-        return {
-          content: [{ type: "text" as const, text }],
-        };
-      } catch (err) {
-        return errorResult(
-          `Failed to generate shopping list: ${err instanceof Error ? err.message : err}`,
-        );
-      }
-    },
+    handleGenerateShoppingList,
   );
 
   server.tool(
@@ -438,87 +564,6 @@ export function registerShoppingTools(server: McpServer): void {
         .optional()
         .describe('Soft cuisine preferences: {"asian": 3} = prefer at least 3 Asian dishes'),
     },
-    async ({
-      days,
-      people,
-      maxPerProtein,
-      maxPerCuisine,
-      maxSlowDays,
-      excludeProteins,
-      slowOnlyOnDays,
-      preferCuisines,
-    }) => {
-      try {
-        const household = await store.getHousehold();
-        const locale = getLocale(household.country);
-        const cur = locale.currency;
-        const pantry = await store.getPantry();
-        const pantrySet = new Set(pantry.map((p) => p.toLowerCase()));
-        const preferredStores = new Set(household.stores.map((s) => s.name));
-        const householdSize = people ?? (household.people.length || household.defaultServings);
-
-        const { scored, dealMap: cachedDeals } = await scoreAllRecipes(
-          preferredStores,
-          pantrySet,
-          householdSize,
-          locale,
-        );
-
-        if (scored.length < days) {
-          return errorResult(
-            `Need at least ${days} recipes to plan ${days} days, but only ${scored.length} recipes exist. Add more with add_recipe.`,
-          );
-        }
-
-        const bestPlan = findOptimalWeek(scored, days, {
-          maxPerProtein,
-          maxPerCuisine,
-          maxSlowDays,
-          excludeProteins,
-          slowOnlyOnDays,
-          preferCuisines,
-          ingredientTags: locale.ingredientTags,
-        });
-
-        if (!bestPlan) {
-          return errorResult(
-            "Could not find a valid meal plan with the variety constraints. Try relaxing maxPerProtein, maxPerCuisine, or maxSlowDays.",
-          );
-        }
-
-        const parts: string[] = [];
-        parts.push(`# ${days}-day meal plan (${householdSize} people)\n`);
-
-        const basket = calculateBasketCost(bestPlan.recipes);
-        parts.push(`Estimated basket: ~${basket.totalCost} ${cur}`);
-        if (basket.sharedSavings > 0) {
-          parts.push(`Shared ingredient savings: ~${basket.sharedSavings} ${cur}`);
-        }
-        parts.push("");
-
-        for (let i = 0; i < bestPlan.recipes.length; i++) {
-          const r = bestPlan.recipes[i];
-          parts.push(
-            `Day ${i + 1}: ${r.name} (~${r.estimatedCost} ${cur}) [${r.proteinType}, ${r.cuisineType}, ${r.complexity}]`,
-          );
-        }
-
-        // Generate shopping list for the planned recipes
-        const allRecipes = await store.getRecipes();
-        const plannedRecipes = allRecipes.filter((r) =>
-          bestPlan.recipes.some((p) => p.name.toLowerCase() === r.name.toLowerCase()),
-        );
-
-        parts.push("\n---\n");
-        const shoppingList = await buildShoppingList(plannedRecipes, householdSize, cachedDeals);
-        parts.push(shoppingList);
-
-        return {
-          content: [{ type: "text" as const, text: parts.join("\n") }],
-        };
-      } catch (err) {
-        return errorResult(`Failed to plan: ${err instanceof Error ? err.message : err}`);
-      }
-    },
+    handlePlanAndShop,
   );
 }

@@ -524,26 +524,6 @@ export function scoreDealMatchCtx(
   return Math.max(0, score);
 }
 
-/**
- * Score how well a deal matches an ingredient for cooking.
- * Returns 0 (no match) to ~100 (perfect match).
- * Accepts optional locale for country-specific term matching.
- */
-export function scoreDealMatch(
-  offer: Offer,
-  ingredient: Ingredient,
-  searchTerm: string,
-  preferredStores: Set<string>,
-  locale?: Locale,
-): number {
-  return scoreDealMatchCtx(
-    offer,
-    ingredient,
-    searchTerm,
-    buildMatchContext(preferredStores, locale),
-  );
-}
-
 export interface DealSearchResult {
   best: Offer | null;
   bestScore: number;

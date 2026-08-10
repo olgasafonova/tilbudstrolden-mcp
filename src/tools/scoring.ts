@@ -16,55 +16,67 @@ import {
 import * as store from "../store.js";
 import { errorResult } from "./shared.js";
 
-function scoreOneRecipe(
-  recipe: store.Recipe,
-  dealMap: Map<string, Offer[]>,
-  preferredStoreNames: Set<string>,
-  pantrySet: Set<string>,
-  householdSize: number,
-  locale?: Locale,
-): ScoredRecipe {
+/** Everything a recipe needs to be scored against the current deal map */
+interface ScoringContext {
+  dealMap: Map<string, Offer[]>;
+  preferredStoreNames: Set<string>;
+  pantrySet: Set<string>;
+  householdSize: number;
+  locale?: Locale;
+}
+
+/** Map the low-confidence alternatives onto the reportable candidate shape */
+function toDealCandidates(result: ReturnType<typeof findBestDeal>): DealCandidate[] | undefined {
+  if (result.confidence !== "low") return undefined;
+  return result.candidates.map((c) => ({
+    heading: c.offer.heading,
+    price: c.offer.price ?? 0,
+    store: c.offer.store,
+    score: c.score,
+  }));
+}
+
+function scoreOneIngredient(
+  ing: store.Ingredient,
+  servings: number,
+  ctx: ScoringContext,
+): ScoredIngredient {
+  const result = findBestDeal(ing, ctx.dealMap, ctx.preferredStoreNames, ctx.locale);
+  const cost = result.best
+    ? computeIngredientCost(result.best, ing.quantity, servings, ctx.householdSize)
+    : 0;
+
+  return {
+    name: ing.name,
+    quantity: ing.quantity,
+    category: ing.category,
+    bestDeal: result.best
+      ? {
+          heading: result.best.heading,
+          price: cost,
+          store: result.best.store,
+        }
+      : null,
+    estimatedCost: cost,
+    confidence: result.confidence,
+    candidates: toDealCandidates(result),
+  };
+}
+
+function scoreOneRecipe(recipe: store.Recipe, ctx: ScoringContext): ScoredRecipe {
   let totalCost = 0;
   let withDeals = 0;
   let nonPantryCount = 0;
   const ingredients: ScoredIngredient[] = [];
 
   for (const ing of recipe.ingredients) {
-    if (pantrySet.has(ing.name.toLowerCase())) continue;
+    if (ctx.pantrySet.has(ing.name.toLowerCase())) continue;
     nonPantryCount++;
 
-    const result = findBestDeal(ing, dealMap, preferredStoreNames, locale);
-    const cost = result.best
-      ? computeIngredientCost(result.best, ing.quantity, recipe.servings, householdSize)
-      : 0;
-
-    const candidates: DealCandidate[] | undefined =
-      result.confidence === "low"
-        ? result.candidates.map((c) => ({
-            heading: c.offer.heading,
-            price: c.offer.price ?? 0,
-            store: c.offer.store,
-            score: c.score,
-          }))
-        : undefined;
-
-    ingredients.push({
-      name: ing.name,
-      quantity: ing.quantity,
-      category: ing.category,
-      bestDeal: result.best
-        ? {
-            heading: result.best.heading,
-            price: cost,
-            store: result.best.store,
-          }
-        : null,
-      estimatedCost: cost,
-      confidence: result.confidence,
-      candidates,
-    });
-    if (result.best) {
-      totalCost += cost;
+    const scoredIng = scoreOneIngredient(ing, recipe.servings, ctx);
+    ingredients.push(scoredIng);
+    if (scoredIng.bestDeal) {
+      totalCost += scoredIng.estimatedCost;
       withDeals++;
     }
   }
@@ -86,16 +98,12 @@ interface ScoreResult {
   dealMap: Map<string, Offer[]>;
 }
 
-export async function scoreAllRecipes(
-  preferredStoreNames: Set<string>,
+/** Every unique, synonym-expanded search term across all non-pantry ingredients */
+function collectSearchTerms(
+  recipes: store.Recipe[],
   pantrySet: Set<string>,
-  householdSize: number,
   locale?: Locale,
-): Promise<ScoreResult> {
-  const recipes = await store.getRecipes();
-  if (recipes.length === 0) return { scored: [], dealMap: new Map() };
-
-  // Collect all unique search terms across all recipes
+): Set<string> {
   const allTerms = new Set<string>();
   for (const recipe of recipes) {
     for (const ing of recipe.ingredients) {
@@ -105,14 +113,26 @@ export async function scoreAllRecipes(
       }
     }
   }
+  return allTerms;
+}
+
+export async function scoreAllRecipes(
+  preferredStoreNames: Set<string>,
+  pantrySet: Set<string>,
+  householdSize: number,
+  locale?: Locale,
+): Promise<ScoreResult> {
+  const recipes = await store.getRecipes();
+  if (recipes.length === 0) return { scored: [], dealMap: new Map() };
 
   // Batch fetch all deals in parallel
+  const allTerms = collectSearchTerms(recipes, pantrySet, locale);
   const countryId = locale?.country ?? "DK";
   const dealMap = await searchDealsBatch([...allTerms], 8, countryId);
 
   // Score each recipe
   const scored: ScoredRecipe[] = recipes.map((recipe) =>
-    scoreOneRecipe(recipe, dealMap, preferredStoreNames, pantrySet, householdSize, locale),
+    scoreOneRecipe(recipe, { dealMap, preferredStoreNames, pantrySet, householdSize, locale }),
   );
 
   scored.sort((a, b) => {
@@ -203,6 +223,87 @@ function formatScoredRecipes(scored: ScoredRecipe[], currency = "DKK"): string {
   return lines.join("\n");
 }
 
+interface ScoreRecipesArgs {
+  optimize: boolean;
+  days: number;
+  maxPerProtein: number;
+  maxPerCuisine: number;
+  maxSlowDays: number;
+  excludeProteins?: string[];
+  allowProteinOnDays?: Record<string, number[]>;
+  slowOnlyOnDays?: number[];
+  preferCuisines?: Record<string, number>;
+}
+
+/** Render the optimized day-by-day plan, or an explanation of why none was found */
+function formatOptimizedPlan(
+  scored: ScoredRecipe[],
+  args: ScoreRecipesArgs,
+  locale: Locale,
+): string[] {
+  const { days } = args;
+  const cur = locale.currency;
+  const bestPlan = findOptimalWeek(scored, days, {
+    maxPerProtein: args.maxPerProtein,
+    maxPerCuisine: args.maxPerCuisine,
+    maxSlowDays: args.maxSlowDays,
+    excludeProteins: args.excludeProteins,
+    allowProteinOnDays: args.allowProteinOnDays,
+    slowOnlyOnDays: args.slowOnlyOnDays,
+    preferCuisines: args.preferCuisines,
+    ingredientTags: locale.ingredientTags,
+  });
+
+  if (!bestPlan) {
+    return [
+      "Could not find a valid combination with the variety constraints. Try relaxing maxPerProtein, maxPerCuisine, or maxSlowDays.",
+    ];
+  }
+
+  const basket = calculateBasketCost(bestPlan.recipes);
+  const lines = [`Total basket: ~${basket.totalCost} ${cur} for ${days} days`];
+  if (basket.sharedSavings > 0) {
+    lines.push(`Shared ingredient savings: ~${basket.sharedSavings} ${cur}`);
+  }
+  lines.push(`Unique items to buy: ${basket.uniqueIngredients}\n`);
+  for (let i = 0; i < bestPlan.recipes.length; i++) {
+    const r = bestPlan.recipes[i];
+    lines.push(
+      `Day ${i + 1}: ${r.name} (~${r.estimatedCost} ${cur}) [${r.proteinType}, ${r.cuisineType}, ${r.complexity}]`,
+    );
+  }
+  return lines;
+}
+
+async function handleScoreRecipes(args: ScoreRecipesArgs) {
+  try {
+    const household = await store.getHousehold();
+    const locale = getLocale(household.country);
+    const pantry = await store.getPantry();
+    const pantrySet = new Set(pantry.map((p) => p.toLowerCase()));
+    const preferredStores = new Set(household.stores.map((s) => s.name));
+
+    const householdSize = household.people.length || household.defaultServings;
+    const { scored } = await scoreAllRecipes(preferredStores, pantrySet, householdSize, locale);
+
+    const parts = [
+      `# Recipe scores (${scored.length} recipes)\n`,
+      formatScoredRecipes(scored, locale.currency),
+    ];
+
+    if (args.optimize && scored.length >= args.days) {
+      parts.push(`\n# Optimized ${args.days}-day plan\n`);
+      parts.push(...formatOptimizedPlan(scored, args, locale));
+    }
+
+    return {
+      content: [{ type: "text" as const, text: parts.join("\n") }],
+    };
+  } catch (err) {
+    return errorResult(`Failed to score recipes: ${err instanceof Error ? err.message : err}`);
+  }
+}
+
 export function registerScoringTools(server: McpServer): void {
   server.tool(
     "score_recipes",
@@ -248,71 +349,6 @@ export function registerScoringTools(server: McpServer): void {
           'Soft cuisine preferences: {"asian": 3} = prefer at least 3 Asian dishes. Best-effort, won\'t fail if impossible.',
         ),
     },
-    async ({
-      optimize,
-      days,
-      maxPerProtein,
-      maxPerCuisine,
-      maxSlowDays,
-      excludeProteins,
-      allowProteinOnDays,
-      slowOnlyOnDays,
-      preferCuisines,
-    }) => {
-      try {
-        const household = await store.getHousehold();
-        const locale = getLocale(household.country);
-        const cur = locale.currency;
-        const pantry = await store.getPantry();
-        const pantrySet = new Set(pantry.map((p) => p.toLowerCase()));
-        const preferredStores = new Set(household.stores.map((s) => s.name));
-
-        const householdSize = household.people.length || household.defaultServings;
-        const { scored } = await scoreAllRecipes(preferredStores, pantrySet, householdSize, locale);
-        const parts: string[] = [];
-
-        parts.push(`# Recipe scores (${scored.length} recipes)\n`);
-        parts.push(formatScoredRecipes(scored, cur));
-
-        if (optimize && scored.length >= days) {
-          parts.push(`\n# Optimized ${days}-day plan\n`);
-
-          const bestPlan = findOptimalWeek(scored, days, {
-            maxPerProtein,
-            maxPerCuisine,
-            maxSlowDays,
-            excludeProteins,
-            allowProteinOnDays,
-            slowOnlyOnDays,
-            preferCuisines,
-            ingredientTags: locale.ingredientTags,
-          });
-          if (bestPlan) {
-            const basket = calculateBasketCost(bestPlan.recipes);
-            parts.push(`Total basket: ~${basket.totalCost} ${cur} for ${days} days`);
-            if (basket.sharedSavings > 0) {
-              parts.push(`Shared ingredient savings: ~${basket.sharedSavings} ${cur}`);
-            }
-            parts.push(`Unique items to buy: ${basket.uniqueIngredients}\n`);
-            for (let i = 0; i < bestPlan.recipes.length; i++) {
-              const r = bestPlan.recipes[i];
-              parts.push(
-                `Day ${i + 1}: ${r.name} (~${r.estimatedCost} ${cur}) [${r.proteinType}, ${r.cuisineType}, ${r.complexity}]`,
-              );
-            }
-          } else {
-            parts.push(
-              "Could not find a valid combination with the variety constraints. Try relaxing maxPerProtein, maxPerCuisine, or maxSlowDays.",
-            );
-          }
-        }
-
-        return {
-          content: [{ type: "text" as const, text: parts.join("\n") }],
-        };
-      } catch (err) {
-        return errorResult(`Failed to score recipes: ${err instanceof Error ? err.message : err}`);
-      }
-    },
+    handleScoreRecipes,
   );
 }

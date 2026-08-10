@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Offer } from "./api.js";
 import {
+  buildMatchContext,
   calculateBasketCost,
   computeIngredientCost,
   computeShoppingCost,
@@ -10,7 +11,7 @@ import {
   parseQuantity,
   SCORE,
   type ScoredRecipe,
-  scoreDealMatch,
+  scoreDealMatchCtx,
 } from "./scoring.js";
 import type { Ingredient } from "./store.js";
 
@@ -239,26 +240,26 @@ describe("scoreDealMatch", () => {
   it("returns 0 for null price", () => {
     const offer = makeOffer({ price: null });
     const ing = makeIngredient();
-    expect(scoreDealMatch(offer, ing, "oksekød", new Set())).toBe(0);
+    expect(scoreDealMatchCtx(offer, ing, "oksekød", buildMatchContext(new Set()))).toBe(0);
   });
 
   it("returns 0 for zero price", () => {
     const offer = makeOffer({ price: 0 });
     const ing = makeIngredient();
-    expect(scoreDealMatch(offer, ing, "oksekød", new Set())).toBe(0);
+    expect(scoreDealMatchCtx(offer, ing, "oksekød", buildMatchContext(new Set()))).toBe(0);
   });
 
   it("returns base score for a basic match with no preferences", () => {
     const offer = makeOffer({ heading: "Hakket oksekød" });
     const ing = makeIngredient({ category: "dairy" }); // non-meat to skip form detection
-    const score = scoreDealMatch(offer, ing, "oksekød", new Set());
+    const score = scoreDealMatchCtx(offer, ing, "oksekød", buildMatchContext(new Set()));
     expect(score).toBe(SCORE.BASE + SCORE.PARTIAL_MATCH_BONUS);
   });
 
   it("gives exact match bonus when heading starts with search term", () => {
     const offer = makeOffer({ heading: "oksekød 7-10%" });
     const ing = makeIngredient({ category: "dairy" });
-    const score = scoreDealMatch(offer, ing, "oksekød", new Set());
+    const score = scoreDealMatchCtx(offer, ing, "oksekød", buildMatchContext(new Set()));
     expect(score).toBe(SCORE.BASE + SCORE.EXACT_MATCH_BONUS);
   });
 
@@ -266,7 +267,7 @@ describe("scoreDealMatch", () => {
     const offer = makeOffer({ store: "Netto" });
     const ing = makeIngredient({ category: "dairy" });
     const preferred = new Set(["Netto"]);
-    const score = scoreDealMatch(offer, ing, "oksekød", preferred);
+    const score = scoreDealMatchCtx(offer, ing, "oksekød", buildMatchContext(preferred));
     expect(score).toBeGreaterThan(SCORE.BASE);
   });
 
@@ -274,35 +275,35 @@ describe("scoreDealMatch", () => {
     const offer = makeOffer({ store: "Bilka" });
     const ing = makeIngredient({ category: "dairy" });
     const preferred = new Set(["Netto"]);
-    const score = scoreDealMatch(offer, ing, "oksekød", preferred);
+    const score = scoreDealMatchCtx(offer, ing, "oksekød", buildMatchContext(preferred));
     expect(score).toBeLessThan(SCORE.BASE);
   });
 
   it("penalizes processed meat products", () => {
     const offer = makeOffer({ heading: "Røget laks" });
     const ing = makeIngredient({ category: "meat" });
-    const score = scoreDealMatch(offer, ing, "laks", new Set());
+    const score = scoreDealMatchCtx(offer, ing, "laks", buildMatchContext(new Set()));
     expect(score).toBeLessThan(SCORE.BASE);
   });
 
   it("bonuses raw meat indicators", () => {
     const offer = makeOffer({ heading: "Fersk hakket oksekød" });
     const ing = makeIngredient({ category: "meat" });
-    const score = scoreDealMatch(offer, ing, "oksekød", new Set());
+    const score = scoreDealMatchCtx(offer, ing, "oksekød", buildMatchContext(new Set()));
     expect(score).toBeGreaterThan(SCORE.BASE);
   });
 
   it("penalizes bundle uncertainty for processed bundles", () => {
     const offer = makeOffer({ heading: "Rejer, kold- eller varmrøget laks" });
     const ing = makeIngredient({ category: "meat" });
-    const score = scoreDealMatch(offer, ing, "laks", new Set());
+    const score = scoreDealMatchCtx(offer, ing, "laks", buildMatchContext(new Set()));
     expect(score).toBeLessThan(SCORE.VIABILITY_THRESHOLD);
   });
 
   it("does not apply meat processing rules to non-meat categories", () => {
     const offer = makeOffer({ heading: "Røget ost" });
     const ing = makeIngredient({ category: "dairy" });
-    const score = scoreDealMatch(offer, ing, "ost", new Set());
+    const score = scoreDealMatchCtx(offer, ing, "ost", buildMatchContext(new Set()));
     // Should get base + partial match, no processing penalty
     expect(score).toBe(SCORE.BASE + SCORE.PARTIAL_MATCH_BONUS);
   });
@@ -310,7 +311,7 @@ describe("scoreDealMatch", () => {
   it("penalizes modifier position (term after preposition)", () => {
     const offer = makeOffer({ heading: "Tunfilet i olivenolie" });
     const ing = makeIngredient({ category: "pantry" });
-    const score = scoreDealMatch(offer, ing, "olivenolie", new Set());
+    const score = scoreDealMatchCtx(offer, ing, "olivenolie", buildMatchContext(new Set()));
     // Should get modifier penalty, well below confident threshold
     expect(score).toBeLessThan(SCORE.CONFIDENT_THRESHOLD);
   });
@@ -318,14 +319,14 @@ describe("scoreDealMatch", () => {
   it("does not penalize when term is the primary product", () => {
     const offer = makeOffer({ heading: "Olivenolie extra virgin" });
     const ing = makeIngredient({ category: "pantry" });
-    const score = scoreDealMatch(offer, ing, "olivenolie", new Set());
+    const score = scoreDealMatchCtx(offer, ing, "olivenolie", buildMatchContext(new Set()));
     expect(score).toBe(SCORE.BASE + SCORE.EXACT_MATCH_BONUS);
   });
 
   it("penalizes when term not found at all in heading", () => {
     const offer = makeOffer({ heading: "Vaseline lotion" });
     const ing = makeIngredient({ category: "pantry" });
-    const score = scoreDealMatch(offer, ing, "MSG", new Set());
+    const score = scoreDealMatchCtx(offer, ing, "MSG", buildMatchContext(new Set()));
     expect(score).toBe(0);
   });
 });

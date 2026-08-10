@@ -10,6 +10,7 @@ import { describe, expect, it } from "vitest";
 import type { Offer } from "./api.js";
 import { type CountryCode, getLocale, SUPPORTED_COUNTRIES } from "./locales.js";
 import {
+  buildMatchContext,
   expandSearchTerms,
   findBestDeal,
   findExcludedTag,
@@ -18,7 +19,7 @@ import {
   SCORE,
   type ScoredIngredient,
   type ScoredRecipe,
-  scoreDealMatch,
+  scoreDealMatchCtx,
 } from "./scoring.js";
 import type { Ingredient } from "./store.js";
 
@@ -223,14 +224,13 @@ describe("Scoring with locale", () => {
     it("penalizes Danish processed meat terms", () => {
       const offer = makeOffer({ heading: "Røget laks" });
       const ing = makeIngredient({ name: "Laks", category: "meat", searchTerms: ["laks"] });
-      const score = scoreDealMatch(offer, ing, "laks", preferredStores, dk);
+      const score = scoreDealMatchCtx(offer, ing, "laks", buildMatchContext(preferredStores, dk));
       // "røget" is a processed indicator -> penalty
-      const baseScore = scoreDealMatch(
+      const baseScore = scoreDealMatchCtx(
         makeOffer({ heading: "Laks filet" }),
         ing,
         "laks",
-        preferredStores,
-        dk,
+        buildMatchContext(preferredStores, dk),
       );
       expect(score).toBeLessThan(baseScore);
     });
@@ -238,7 +238,12 @@ describe("Scoring with locale", () => {
     it("gives raw bonus for Danish raw terms", () => {
       const offer = makeOffer({ heading: "Fersk kyllingebryst" });
       const ing = makeIngredient({ name: "Kylling", category: "meat", searchTerms: ["kylling"] });
-      const score = scoreDealMatch(offer, ing, "kylling", preferredStores, dk);
+      const score = scoreDealMatchCtx(
+        offer,
+        ing,
+        "kylling",
+        buildMatchContext(preferredStores, dk),
+      );
       expect(score).toBeGreaterThan(SCORE.BASE);
     });
   });
@@ -249,13 +254,12 @@ describe("Scoring with locale", () => {
     it("penalizes Norwegian processed meat terms", () => {
       const offer = makeOffer({ heading: "Røkt laks", currency: "NOK" });
       const ing = makeIngredient({ name: "Laks", category: "meat", searchTerms: ["laks"] });
-      const score = scoreDealMatch(offer, ing, "laks", preferredStores, no);
-      const baseScore = scoreDealMatch(
+      const score = scoreDealMatchCtx(offer, ing, "laks", buildMatchContext(preferredStores, no));
+      const baseScore = scoreDealMatchCtx(
         makeOffer({ heading: "Laks filet", currency: "NOK" }),
         ing,
         "laks",
-        preferredStores,
-        no,
+        buildMatchContext(preferredStores, no),
       );
       expect(score).toBeLessThan(baseScore);
     });
@@ -263,7 +267,12 @@ describe("Scoring with locale", () => {
     it("gives raw bonus for Norwegian raw terms", () => {
       const offer = makeOffer({ heading: "Fersk kyllingbryst", currency: "NOK" });
       const ing = makeIngredient({ name: "Kylling", category: "meat", searchTerms: ["kylling"] });
-      const score = scoreDealMatch(offer, ing, "kylling", preferredStores, no);
+      const score = scoreDealMatchCtx(
+        offer,
+        ing,
+        "kylling",
+        buildMatchContext(preferredStores, no),
+      );
       expect(score).toBeGreaterThan(SCORE.BASE);
     });
   });
@@ -274,13 +283,12 @@ describe("Scoring with locale", () => {
     it("penalizes Swedish processed meat terms", () => {
       const offer = makeOffer({ heading: "Rökt lax", currency: "SEK" });
       const ing = makeIngredient({ name: "Lax", category: "meat", searchTerms: ["lax"] });
-      const score = scoreDealMatch(offer, ing, "lax", preferredStores, se);
-      const baseScore = scoreDealMatch(
+      const score = scoreDealMatchCtx(offer, ing, "lax", buildMatchContext(preferredStores, se));
+      const baseScore = scoreDealMatchCtx(
         makeOffer({ heading: "Lax filé", currency: "SEK" }),
         ing,
         "lax",
-        preferredStores,
-        se,
+        buildMatchContext(preferredStores, se),
       );
       expect(score).toBeLessThan(baseScore);
     });
@@ -288,7 +296,12 @@ describe("Scoring with locale", () => {
     it("gives raw bonus for Swedish raw terms", () => {
       const offer = makeOffer({ heading: "Färsk kycklingbröst", currency: "SEK" });
       const ing = makeIngredient({ name: "Kyckling", category: "meat", searchTerms: ["kyckling"] });
-      const score = scoreDealMatch(offer, ing, "kyckling", preferredStores, se);
+      const score = scoreDealMatchCtx(
+        offer,
+        ing,
+        "kyckling",
+        buildMatchContext(preferredStores, se),
+      );
       expect(score).toBeGreaterThan(SCORE.BASE);
     });
   });
@@ -299,13 +312,12 @@ describe("Scoring with locale", () => {
     it("penalizes Finnish processed meat terms", () => {
       const offer = makeOffer({ heading: "Savustettu lohi", currency: "EUR" });
       const ing = makeIngredient({ name: "Lohi", category: "meat", searchTerms: ["lohi"] });
-      const score = scoreDealMatch(offer, ing, "lohi", preferredStores, fi);
-      const baseScore = scoreDealMatch(
+      const score = scoreDealMatchCtx(offer, ing, "lohi", buildMatchContext(preferredStores, fi));
+      const baseScore = scoreDealMatchCtx(
         makeOffer({ heading: "Lohi filee", currency: "EUR" }),
         ing,
         "lohi",
-        preferredStores,
-        fi,
+        buildMatchContext(preferredStores, fi),
       );
       expect(score).toBeLessThan(baseScore);
     });
@@ -313,7 +325,7 @@ describe("Scoring with locale", () => {
     it("gives raw bonus for Finnish raw terms", () => {
       const offer = makeOffer({ heading: "Tuore kananrinta", currency: "EUR" });
       const ing = makeIngredient({ name: "Kana", category: "meat", searchTerms: ["kana"] });
-      const score = scoreDealMatch(offer, ing, "kana", preferredStores, fi);
+      const score = scoreDealMatchCtx(offer, ing, "kana", buildMatchContext(preferredStores, fi));
       expect(score).toBeGreaterThan(SCORE.BASE);
     });
 
@@ -324,7 +336,12 @@ describe("Scoring with locale", () => {
         category: "meat",
         searchTerms: ["jauheliha"],
       });
-      const score = scoreDealMatch(offer, ing, "jauheliha", preferredStores, fi);
+      const score = scoreDealMatchCtx(
+        offer,
+        ing,
+        "jauheliha",
+        buildMatchContext(preferredStores, fi),
+      );
       expect(score).toBeGreaterThan(SCORE.BASE);
     });
   });
@@ -334,35 +351,45 @@ describe("Scoring with locale", () => {
       const dk = getLocale("DK");
       const offer = makeOffer({ heading: "Vaseline creme" });
       const ing = makeIngredient({ searchTerms: ["creme"] });
-      expect(scoreDealMatch(offer, ing, "creme", preferredStores, dk)).toBe(0);
+      expect(scoreDealMatchCtx(offer, ing, "creme", buildMatchContext(preferredStores, dk))).toBe(
+        0,
+      );
     });
 
     it("rejects Norwegian non-food items", () => {
       const no = getLocale("NO");
       const offer = makeOffer({ heading: "Sjampo tørt hår" });
       const ing = makeIngredient({ searchTerms: ["sjampo"] });
-      expect(scoreDealMatch(offer, ing, "sjampo", preferredStores, no)).toBe(0);
+      expect(scoreDealMatchCtx(offer, ing, "sjampo", buildMatchContext(preferredStores, no))).toBe(
+        0,
+      );
     });
 
     it("rejects Swedish non-food items", () => {
       const se = getLocale("SE");
       const offer = makeOffer({ heading: "Diskmedel citron" });
       const ing = makeIngredient({ searchTerms: ["citron"] });
-      expect(scoreDealMatch(offer, ing, "citron", preferredStores, se)).toBe(0);
+      expect(scoreDealMatchCtx(offer, ing, "citron", buildMatchContext(preferredStores, se))).toBe(
+        0,
+      );
     });
 
     it("rejects Finnish non-food items", () => {
       const fi = getLocale("FI");
       const offer = makeOffer({ heading: "Shampoo sitruuna" });
       const ing = makeIngredient({ searchTerms: ["sitruuna"] });
-      expect(scoreDealMatch(offer, ing, "sitruuna", preferredStores, fi)).toBe(0);
+      expect(
+        scoreDealMatchCtx(offer, ing, "sitruuna", buildMatchContext(preferredStores, fi)),
+      ).toBe(0);
     });
 
     it("rejects Finnish ready meals", () => {
       const fi = getLocale("FI");
       const offer = makeOffer({ heading: "Valmisruoka lihapullat" });
       const ing = makeIngredient({ searchTerms: ["lihapullat"] });
-      expect(scoreDealMatch(offer, ing, "lihapullat", preferredStores, fi)).toBe(0);
+      expect(
+        scoreDealMatchCtx(offer, ing, "lihapullat", buildMatchContext(preferredStores, fi)),
+      ).toBe(0);
     });
   });
 
@@ -939,7 +966,7 @@ describe("Backward compatibility", () => {
     const offer = makeOffer({ heading: "Røget laks" });
     const ing = makeIngredient({ name: "Laks", category: "meat", searchTerms: ["laks"] });
     // No locale passed - should use DK defaults
-    const score = scoreDealMatch(offer, ing, "laks", new Set(["TestStore"]));
+    const score = scoreDealMatchCtx(offer, ing, "laks", buildMatchContext(new Set(["TestStore"])));
     expect(score).toBeGreaterThan(0);
   });
 

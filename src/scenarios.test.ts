@@ -11,12 +11,13 @@ import { z } from "zod";
 import type { Offer } from "./api.js";
 import { type CountryCode, getLocale, isValidCountry, SUPPORTED_COUNTRIES } from "./locales.js";
 import {
+  buildMatchContext,
   expandSearchTerms,
   findBestDeal,
   findExcludedTag,
   SCORE,
   type ScoredIngredient,
-  scoreDealMatch,
+  scoreDealMatchCtx,
 } from "./scoring.js";
 import type { Ingredient } from "./store.js";
 
@@ -176,7 +177,7 @@ describe("Scenario: Cross-country offer leakage", () => {
       price: 45,
     });
     const ing = makeIngredient({ name: "Oksekød", searchTerms: ["oksekød"], category: "meat" });
-    const score = scoreDealMatch(offer, ing, "oksekød", preferredStores, dk);
+    const score = scoreDealMatchCtx(offer, ing, "oksekød", buildMatchContext(preferredStores, dk));
     expect(score).toBeGreaterThan(SCORE.VIABILITY_THRESHOLD);
   });
 
@@ -192,7 +193,12 @@ describe("Scenario: Cross-country offer leakage", () => {
     });
     const ing = makeIngredient({ name: "Oksedeig", searchTerms: ["oksedeig"], category: "meat" });
     // Norwegian term "oksedeig" won't match Danish heading "oksekød"
-    const score = scoreDealMatch(dkOffer, ing, "oksedeig", preferredStores, no);
+    const score = scoreDealMatchCtx(
+      dkOffer,
+      ing,
+      "oksedeig",
+      buildMatchContext(preferredStores, no),
+    );
     // Heading doesn't contain "oksedeig", so NO_MATCH_PENALTY applies
     expect(score).toBeLessThanOrEqual(SCORE.VIABILITY_THRESHOLD);
   });
@@ -276,8 +282,18 @@ describe("Scenario: Finnish household with Prisma preference", () => {
       searchTerms: ["jauheliha"],
       category: "meat",
     });
-    const rawScore = scoreDealMatch(rawOffer, ing, "jauheliha", preferredStores, fi);
-    const processedScore = scoreDealMatch(processedOffer, ing, "jauheliha", preferredStores, fi);
+    const rawScore = scoreDealMatchCtx(
+      rawOffer,
+      ing,
+      "jauheliha",
+      buildMatchContext(preferredStores, fi),
+    );
+    const processedScore = scoreDealMatchCtx(
+      processedOffer,
+      ing,
+      "jauheliha",
+      buildMatchContext(preferredStores, fi),
+    );
     expect(rawScore).toBeGreaterThan(processedScore);
   });
 
@@ -292,7 +308,7 @@ describe("Scenario: Finnish household with Prisma preference", () => {
       searchTerms: ["liha"],
       category: "meat",
     });
-    expect(scoreDealMatch(offer, ing, "liha", preferredStores, fi)).toBe(0);
+    expect(scoreDealMatchCtx(offer, ing, "liha", buildMatchContext(preferredStores, fi))).toBe(0);
   });
 
   it("filters out non-preferred Finnish chains when Prisma configured", () => {
@@ -306,7 +322,9 @@ describe("Scenario: Finnish household with Prisma preference", () => {
       searchTerms: ["jauheliha"],
       category: "meat",
     });
-    expect(scoreDealMatch(tokmanniOffer, ing, "jauheliha", preferredStores, fi)).toBe(0);
+    expect(
+      scoreDealMatchCtx(tokmanniOffer, ing, "jauheliha", buildMatchContext(preferredStores, fi)),
+    ).toBe(0);
   });
 });
 
@@ -468,35 +486,37 @@ describe("Scenario: Non-food products in search results", () => {
     const no = getLocale("NO");
     const offer = makeOffer({ heading: "TRENINGSBITER HUND lam", currency: "NOK" });
     const ing = makeIngredient({ name: "Lam", searchTerms: ["lam"], category: "meat" });
-    expect(scoreDealMatch(offer, ing, "lam", preferredStores, no)).toBe(0);
+    expect(scoreDealMatchCtx(offer, ing, "lam", buildMatchContext(preferredStores, no))).toBe(0);
   });
 
   it("filters Norwegian cat food", () => {
     const no = getLocale("NO");
     const offer = makeOffer({ heading: "Kattemat laks", currency: "NOK" });
     const ing = makeIngredient({ name: "Laks", searchTerms: ["laks"], category: "meat" });
-    expect(scoreDealMatch(offer, ing, "laks", preferredStores, no)).toBe(0);
+    expect(scoreDealMatchCtx(offer, ing, "laks", buildMatchContext(preferredStores, no))).toBe(0);
   });
 
   it("filters Swedish dog food", () => {
     const se = getLocale("SE");
     const offer = makeOffer({ heading: "Hundmat lamm", currency: "SEK" });
     const ing = makeIngredient({ name: "Lamm", searchTerms: ["lamm"], category: "meat" });
-    expect(scoreDealMatch(offer, ing, "lamm", preferredStores, se)).toBe(0);
+    expect(scoreDealMatchCtx(offer, ing, "lamm", buildMatchContext(preferredStores, se))).toBe(0);
   });
 
   it("filters Danish dog food", () => {
     const dk = getLocale("DK");
     const offer = makeOffer({ heading: "Hundemad kylling", currency: "DKK" });
     const ing = makeIngredient({ name: "Kylling", searchTerms: ["kylling"], category: "meat" });
-    expect(scoreDealMatch(offer, ing, "kylling", preferredStores, dk)).toBe(0);
+    expect(scoreDealMatchCtx(offer, ing, "kylling", buildMatchContext(preferredStores, dk))).toBe(
+      0,
+    );
   });
 
   it("filters Norwegian dog snacks", () => {
     const no = getLocale("NO");
     const offer = makeOffer({ heading: "MAXDOG HUNDEMAT okse", currency: "NOK" });
     const ing = makeIngredient({ name: "Okse", searchTerms: ["okse"], category: "meat" });
-    expect(scoreDealMatch(offer, ing, "okse", preferredStores, no)).toBe(0);
+    expect(scoreDealMatchCtx(offer, ing, "okse", buildMatchContext(preferredStores, no))).toBe(0);
   });
 
   it("does NOT filter actual food containing 'hund' substring", () => {
@@ -505,7 +525,7 @@ describe("Scenario: Non-food products in search results", () => {
     const offer = makeOffer({ heading: "Hundra gram choklad", currency: "SEK" });
     const ing = makeIngredient({ name: "Choklad", searchTerms: ["choklad"], category: "other" });
     // "hundmat" is the filter term, "hundra" should not match
-    const score = scoreDealMatch(offer, ing, "choklad", preferredStores, se);
+    const score = scoreDealMatchCtx(offer, ing, "choklad", buildMatchContext(preferredStores, se));
     expect(score).toBeGreaterThan(0);
   });
 });
@@ -593,13 +613,17 @@ describe("Scenario: Bundle offers per locale", () => {
     const dk = getLocale("DK");
     const offer = makeOffer({ heading: "Pasta eller pastasauce" });
     const ing = makeIngredient({ searchTerms: ["pasta"], category: "pantry" });
-    const bundleScore = scoreDealMatch(offer, ing, "pasta", preferredStores, dk);
-    const normalScore = scoreDealMatch(
+    const bundleScore = scoreDealMatchCtx(
+      offer,
+      ing,
+      "pasta",
+      buildMatchContext(preferredStores, dk),
+    );
+    const normalScore = scoreDealMatchCtx(
       makeOffer({ heading: "Pasta penne" }),
       ing,
       "pasta",
-      preferredStores,
-      dk,
+      buildMatchContext(preferredStores, dk),
     );
     expect(bundleScore).toBeLessThan(normalScore);
   });
@@ -609,13 +633,17 @@ describe("Scenario: Bundle offers per locale", () => {
     // "pizza" is in non-ingredient list for NO, so use a non-blocked term
     const offer2 = makeOffer({ heading: "Ost eller yoghurt", currency: "NOK" });
     const ing2 = makeIngredient({ searchTerms: ["ost"], category: "dairy" });
-    const bundleScore = scoreDealMatch(offer2, ing2, "ost", preferredStores, no);
-    const normalScore = scoreDealMatch(
+    const bundleScore = scoreDealMatchCtx(
+      offer2,
+      ing2,
+      "ost",
+      buildMatchContext(preferredStores, no),
+    );
+    const normalScore = scoreDealMatchCtx(
       makeOffer({ heading: "Ost norvegia", currency: "NOK" }),
       ing2,
       "ost",
-      preferredStores,
-      no,
+      buildMatchContext(preferredStores, no),
     );
     expect(bundleScore).toBeLessThan(normalScore);
   });
@@ -624,13 +652,17 @@ describe("Scenario: Bundle offers per locale", () => {
     const se = getLocale("SE");
     const offer = makeOffer({ heading: "Ost eller smör", currency: "SEK" });
     const ing = makeIngredient({ searchTerms: ["ost"], category: "dairy" });
-    const bundleScore = scoreDealMatch(offer, ing, "ost", preferredStores, se);
-    const normalScore = scoreDealMatch(
+    const bundleScore = scoreDealMatchCtx(
+      offer,
+      ing,
+      "ost",
+      buildMatchContext(preferredStores, se),
+    );
+    const normalScore = scoreDealMatchCtx(
       makeOffer({ heading: "Ost prästost", currency: "SEK" }),
       ing,
       "ost",
-      preferredStores,
-      se,
+      buildMatchContext(preferredStores, se),
     );
     expect(bundleScore).toBeLessThan(normalScore);
   });
@@ -647,7 +679,9 @@ describe("Scenario: Preferred store filtering per country", () => {
     const preferredStores = new Set(["Føtex"]);
     const offer = makeOffer({ heading: "Hakket oksekød", store: "føtex" });
     const ing = makeIngredient({ searchTerms: ["oksekød"], category: "meat" });
-    expect(scoreDealMatch(offer, ing, "oksekød", preferredStores, dk)).toBeGreaterThan(0);
+    expect(
+      scoreDealMatchCtx(offer, ing, "oksekød", buildMatchContext(preferredStores, dk)),
+    ).toBeGreaterThan(0);
   });
 
   it("matches REMA 1000 regardless of casing", () => {
@@ -655,7 +689,9 @@ describe("Scenario: Preferred store filtering per country", () => {
     const preferredStores = new Set(["rema 1000"]);
     const offer = makeOffer({ heading: "Hakket oksekød", store: "REMA 1000" });
     const ing = makeIngredient({ searchTerms: ["oksekød"], category: "meat" });
-    expect(scoreDealMatch(offer, ing, "oksekød", preferredStores, dk)).toBeGreaterThan(0);
+    expect(
+      scoreDealMatchCtx(offer, ing, "oksekød", buildMatchContext(preferredStores, dk)),
+    ).toBeGreaterThan(0);
   });
 
   it("excludes non-preferred stores in DK", () => {
@@ -663,7 +699,9 @@ describe("Scenario: Preferred store filtering per country", () => {
     const preferredStores = new Set(["Netto"]);
     const offer = makeOffer({ heading: "Hakket oksekød", store: "Bilka" });
     const ing = makeIngredient({ searchTerms: ["oksekød"], category: "meat" });
-    expect(scoreDealMatch(offer, ing, "oksekød", preferredStores, dk)).toBe(0);
+    expect(scoreDealMatchCtx(offer, ing, "oksekød", buildMatchContext(preferredStores, dk))).toBe(
+      0,
+    );
   });
 
   it("excludes non-preferred stores in NO", () => {
@@ -671,7 +709,9 @@ describe("Scenario: Preferred store filtering per country", () => {
     const preferredStores = new Set(["REMA 1000"]);
     const offer = makeOffer({ heading: "Kjøttdeig", store: "KIWI", currency: "NOK" });
     const ing = makeIngredient({ searchTerms: ["kjøttdeig"], category: "meat" });
-    expect(scoreDealMatch(offer, ing, "kjøttdeig", preferredStores, no)).toBe(0);
+    expect(scoreDealMatchCtx(offer, ing, "kjøttdeig", buildMatchContext(preferredStores, no))).toBe(
+      0,
+    );
   });
 
   it("includes preferred stores in SE", () => {
@@ -679,7 +719,12 @@ describe("Scenario: Preferred store filtering per country", () => {
     const preferredStores = new Set(["ICA Kvantum"]);
     const offer = makeOffer({ heading: "Kycklingfilé", store: "ICA Kvantum", currency: "SEK" });
     const ing = makeIngredient({ searchTerms: ["kycklingfilé"], category: "meat" });
-    const score = scoreDealMatch(offer, ing, "kycklingfilé", preferredStores, se);
+    const score = scoreDealMatchCtx(
+      offer,
+      ing,
+      "kycklingfilé",
+      buildMatchContext(preferredStores, se),
+    );
     expect(score).toBeGreaterThan(SCORE.VIABILITY_THRESHOLD);
   });
 });
@@ -695,14 +740,14 @@ describe("Scenario: Defensive handling of bad API data", () => {
     const dk = getLocale("DK");
     const offer = makeOffer({ price: null });
     const ing = makeIngredient({ searchTerms: ["test"] });
-    expect(scoreDealMatch(offer, ing, "test", preferredStores, dk)).toBe(0);
+    expect(scoreDealMatchCtx(offer, ing, "test", buildMatchContext(preferredStores, dk))).toBe(0);
   });
 
   it("handles offer with zero price", () => {
     const dk = getLocale("DK");
     const offer = makeOffer({ price: 0 });
     const ing = makeIngredient({ searchTerms: ["test"] });
-    expect(scoreDealMatch(offer, ing, "test", preferredStores, dk)).toBe(0);
+    expect(scoreDealMatchCtx(offer, ing, "test", buildMatchContext(preferredStores, dk))).toBe(0);
   });
 
   it("handles offer with empty heading", () => {
@@ -710,7 +755,7 @@ describe("Scenario: Defensive handling of bad API data", () => {
     const offer = makeOffer({ heading: "" });
     const ing = makeIngredient({ searchTerms: ["test"] });
     // Empty heading won't match any term -> NO_MATCH_PENALTY
-    const score = scoreDealMatch(offer, ing, "test", preferredStores, dk);
+    const score = scoreDealMatchCtx(offer, ing, "test", buildMatchContext(preferredStores, dk));
     expect(score).toBeLessThanOrEqual(SCORE.VIABILITY_THRESHOLD);
   });
 
@@ -796,13 +841,17 @@ describe("Scenario: Processed/raw detection language accuracy", () => {
       const locale = getLocale(code);
       const offer = makeOffer({ heading: `${term} laks`, currency: locale.currency });
       const ing = makeIngredient({ name: "Laks", searchTerms: ["laks"], category: "meat" });
-      const score = scoreDealMatch(offer, ing, "laks", preferredStores, locale);
-      const freshScore = scoreDealMatch(
+      const score = scoreDealMatchCtx(
+        offer,
+        ing,
+        "laks",
+        buildMatchContext(preferredStores, locale),
+      );
+      const freshScore = scoreDealMatchCtx(
         makeOffer({ heading: "Fersk laks", currency: locale.currency }),
         ing,
         "laks",
-        preferredStores,
-        locale,
+        buildMatchContext(preferredStores, locale),
       );
       expect(score, `${code}: "${term}" should be penalized as processed`).toBeLessThan(freshScore);
     }
@@ -820,7 +869,12 @@ describe("Scenario: Processed/raw detection language accuracy", () => {
       const searchTerm = heading.split(" ")[1]; // second word
       const offer = makeOffer({ heading, currency: locale.currency });
       const ing = makeIngredient({ name: searchTerm, searchTerms: [searchTerm], category: "meat" });
-      const score = scoreDealMatch(offer, ing, searchTerm, preferredStores, locale);
+      const score = scoreDealMatchCtx(
+        offer,
+        ing,
+        searchTerm,
+        buildMatchContext(preferredStores, locale),
+      );
       expect(score, `${code}: "${heading}" should get raw bonus`).toBeGreaterThan(SCORE.BASE);
     }
   });
@@ -836,13 +890,17 @@ describe("Scenario: Processed/raw detection language accuracy", () => {
       const locale = getLocale(code);
       const offer = makeOffer({ heading: `${term} kylling`, currency: locale.currency });
       const ing = makeIngredient({ name: "Kylling", searchTerms: ["kylling"], category: "meat" });
-      const score = scoreDealMatch(offer, ing, "kylling", preferredStores, locale);
-      const plainScore = scoreDealMatch(
+      const score = scoreDealMatchCtx(
+        offer,
+        ing,
+        "kylling",
+        buildMatchContext(preferredStores, locale),
+      );
+      const plainScore = scoreDealMatchCtx(
         makeOffer({ heading: "Kylling hel", currency: locale.currency }),
         ing,
         "kylling",
-        preferredStores,
-        locale,
+        buildMatchContext(preferredStores, locale),
       );
       expect(score, `${code}: "${term}" should be penalized`).toBeLessThan(plainScore);
     }
