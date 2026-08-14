@@ -165,7 +165,11 @@ async function resolveDealMap(
     for (const term of expandSearchTerms(ing.searchTerms, locale.synonymMap))
       allSearchTerms.add(term);
   }
-  return searchDealsBatch([...allSearchTerms], 8, locale.country);
+  return searchDealsBatch({
+    queries: [...allSearchTerms],
+    limit: 8,
+    country: locale.country,
+  });
 }
 
 interface IngredientShoppingResult {

@@ -126,14 +126,15 @@ describe("scoreAllRecipes", () => {
     ]);
     await scoreAllRecipes(new Set(), new Set(), 2, getLocale("DK"));
 
-    const [terms, limit, country] = vi.mocked(api.searchDealsBatch).mock.calls[0];
+    const [search] = vi.mocked(api.searchDealsBatch).mock.calls[0];
+    const terms = search.queries;
     // "oksefars" expands to include the "hakket oksekød" synonym.
     expect(terms).toContain("oksefars");
     expect(terms).toContain("hakket oksekød");
     expect(terms).toContain("løg");
     expect(new Set(terms).size).toBe(terms.length);
-    expect(limit).toBe(8);
-    expect(country).toBe("DK");
+    expect(search.limit).toBe(8);
+    expect(search.country).toBe("DK");
   });
 
   it("excludes pantry ingredients from both the search and the coverage denominator", async () => {
@@ -159,7 +160,7 @@ describe("scoreAllRecipes", () => {
 
     const { scored } = await scoreAllRecipes(new Set(), new Set(["salt"]), 2, getLocale("DK"));
 
-    expect(vi.mocked(api.searchDealsBatch).mock.calls[0][0]).not.toContain("salt");
+    expect(vi.mocked(api.searchDealsBatch).mock.calls[0][0].queries).not.toContain("salt");
     expect(scored[0].ingredients.map((i) => i.name)).toEqual(["Hakket oksekød"]);
     // 1 of 1 non-pantry ingredient matched.
     expect(scored[0].dealCoverage).toBe(100);

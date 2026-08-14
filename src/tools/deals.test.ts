@@ -96,19 +96,31 @@ describe("search_deals", () => {
     vi.mocked(api.searchDeals).mockResolvedValue([makeOffer()]);
     vi.mocked(store.getHousehold).mockResolvedValue(makeHousehold({ country: "SE" }));
     await callTool(stub, "search_deals", { query: "  köttfärs  " });
-    expect(api.searchDeals).toHaveBeenCalledWith("köttfärs", 20, "SE");
+    expect(api.searchDeals).toHaveBeenCalledWith({
+      query: "köttfärs",
+      limit: 20,
+      country: "SE",
+    });
   });
 
   it("defaults the limit to 20 via the schema", async () => {
     vi.mocked(api.searchDeals).mockResolvedValue([]);
     await callTool(stub, "search_deals", { query: "mælk" });
-    expect(api.searchDeals).toHaveBeenCalledWith("mælk", 20, "DK");
+    expect(api.searchDeals).toHaveBeenCalledWith({
+      query: "mælk",
+      limit: 20,
+      country: "DK",
+    });
   });
 
   it("honours an explicit limit", async () => {
     vi.mocked(api.searchDeals).mockResolvedValue([]);
     await callTool(stub, "search_deals", { query: "mælk", limit: 5 });
-    expect(api.searchDeals).toHaveBeenCalledWith("mælk", 5, "DK");
+    expect(api.searchDeals).toHaveBeenCalledWith({
+      query: "mælk",
+      limit: 5,
+      country: "DK",
+    });
   });
 
   it("reports the hit count using the untrimmed query in the header", async () => {
@@ -149,7 +161,7 @@ describe("get_store_offers", () => {
     vi.mocked(api.getStoreOffers).mockResolvedValue([]);
     await callTool(stub, "get_store_offers", { store: "  Føtex " });
     // "føtex" is a known DK store; the raw name must not reach the API.
-    const dealerId = vi.mocked(api.getStoreOffers).mock.calls[0][0];
+    const { dealerId } = vi.mocked(api.getStoreOffers).mock.calls[0][0];
     expect(dealerId).not.toBe("Føtex");
     expect(dealerId).toBe("bdf5A");
   });
@@ -157,13 +169,19 @@ describe("get_store_offers", () => {
   it("passes an unrecognised value through as a raw dealer ID", async () => {
     vi.mocked(api.getStoreOffers).mockResolvedValue([]);
     await callTool(stub, "get_store_offers", { store: "abc123", limit: 10 });
-    expect(api.getStoreOffers).toHaveBeenCalledWith("abc123", 10);
+    expect(api.getStoreOffers).toHaveBeenCalledWith({
+      dealerId: "abc123",
+      limit: 10,
+    });
   });
 
   it("defaults the limit to 50 via the schema", async () => {
     vi.mocked(api.getStoreOffers).mockResolvedValue([]);
     await callTool(stub, "get_store_offers", { store: "abc123" });
-    expect(api.getStoreOffers).toHaveBeenCalledWith("abc123", 50);
+    expect(api.getStoreOffers).toHaveBeenCalledWith({
+      dealerId: "abc123",
+      limit: 50,
+    });
   });
 
   it("titles the response with the store name reported by the offers", async () => {
@@ -236,7 +254,7 @@ describe("list_stores", () => {
       { id: "a1", name: "Aldi", website: null, logoUrl: null, country: "DK" },
     ] satisfies Dealer[]);
     const text = textOf(await callTool(stub, "list_stores", { all: true }));
-    expect(api.listStores).toHaveBeenCalledWith("DK");
+    expect(api.listStores).toHaveBeenCalledWith({ country: "DK" });
     expect(text).toContain("2 stores:");
     // Sorted alphabetically, and the website is appended when present.
     expect(text.indexOf("- Aldi (id: a1)")).toBeLessThan(text.indexOf("- Bilka (id: b2)"));
@@ -292,8 +310,8 @@ describe("deals_this_week", () => {
     vi.mocked(api.getStoreOffers).mockResolvedValue([]);
     await callTool(stub, "deals_this_week", {});
     expect(vi.mocked(api.getStoreOffers).mock.calls).toEqual([
-      ["n1", 30],
-      ["f1", 30],
+      [{ dealerId: "n1", limit: 30 }],
+      [{ dealerId: "f1", limit: 30 }],
     ]);
   });
 
@@ -363,7 +381,7 @@ describe("deals_this_week", () => {
 
   it("reports a single store's failure without failing the whole roll-up", async () => {
     vi.mocked(store.getHousehold).mockResolvedValue({ ...twoStores });
-    vi.mocked(api.getStoreOffers).mockImplementation(async (dealerId: string) => {
+    vi.mocked(api.getStoreOffers).mockImplementation(async ({ dealerId }) => {
       if (dealerId === "f1") throw new Error("upstream down");
       return [makeOffer({ heading: "Mælk" })];
     });
