@@ -36,7 +36,7 @@ function listKnownStoresAll(locale: Locale, query: string | undefined): string {
 
 /** DK "all stores" path: full upstream directory. */
 async function listFullDirectory(locale: Locale, query: string | undefined): Promise<string> {
-  const stores = await listStores(locale.country);
+  const stores = await listStores({ country: locale.country });
   const sorted = stores.sort((a, b) => a.name.localeCompare(b.name));
   const filtered = filterByName(sorted, query, (s) => s.name.toLowerCase());
   const lines = filtered.map((s) => `- ${s.name} (id: ${s.id})${s.website ? ` ${s.website}` : ""}`);
@@ -128,7 +128,11 @@ function textResult(text: string) {
 async function handleSearchDeals({ query, limit }: { query: string; limit: number }) {
   try {
     const locale = await getActiveLocale();
-    const offers = await searchDeals(query.trim(), limit, locale.country);
+    const offers = await searchDeals({
+      query: query.trim(),
+      limit,
+      country: locale.country,
+    });
     return textResult(`Found ${offers.length} deals for "${query}":\n\n${formatOfferList(offers)}`);
   } catch (err) {
     return errorResult(`Failed to search deals: ${err instanceof Error ? err.message : err}`);
@@ -140,7 +144,7 @@ async function handleGetStoreOffers({ store: storeName, limit }: { store: string
     const locale = await getActiveLocale();
     const knownStores = getKnownStores(locale);
     const dealerId = knownStores[storeName.trim().toLowerCase()] ?? storeName.trim();
-    const offers = await getStoreOffers(dealerId, limit);
+    const offers = await getStoreOffers({ dealerId, limit });
     const name = offers[0]?.store ?? storeName;
     return textResult(`${offers.length} current offers at ${name}:\n\n${formatOfferList(offers)}`);
   } catch (err) {
@@ -170,7 +174,7 @@ async function fetchPreferredStoreOffers(
   return Promise.all(
     stores.map(async (s) => {
       try {
-        const offers = await getStoreOffers(s.dealerId, limit);
+        const offers = await getStoreOffers({ dealerId: s.dealerId, limit });
         return { store: s, offers, error: false };
       } catch {
         return { store: s, offers: [] as Offer[], error: true };

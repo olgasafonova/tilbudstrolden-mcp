@@ -128,11 +128,21 @@ export async function scoreAllRecipes(
   // Batch fetch all deals in parallel
   const allTerms = collectSearchTerms(recipes, pantrySet, locale);
   const countryId = locale?.country ?? "DK";
-  const dealMap = await searchDealsBatch([...allTerms], 8, countryId);
+  const dealMap = await searchDealsBatch({
+    queries: [...allTerms],
+    limit: 8,
+    country: countryId,
+  });
 
   // Score each recipe
   const scored: ScoredRecipe[] = recipes.map((recipe) =>
-    scoreOneRecipe(recipe, { dealMap, preferredStoreNames, pantrySet, householdSize, locale }),
+    scoreOneRecipe(recipe, {
+      dealMap,
+      preferredStoreNames,
+      pantrySet,
+      householdSize,
+      locale,
+    }),
   );
 
   scored.sort((a, b) => {
