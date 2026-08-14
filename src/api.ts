@@ -1,12 +1,9 @@
 // etilbudsavis.dk / Tjek API client
 
-import { createRequire } from "node:module";
-
-const require = createRequire(import.meta.url);
-const { version } = require("../package.json") as { version: string };
+import { SERVER_VERSION } from "./version.js";
 
 const BASE_URL = "https://api.etilbudsavis.dk/v2";
-const USER_AGENT = `tilbudstrolden-mcp/${version}`;
+const USER_AGENT = `tilbudstrolden-mcp/${SERVER_VERSION}`;
 const FETCH_TIMEOUT_MS = 8000;
 const MAX_RETRIES = 3;
 const RETRY_BASE_MS = 500;
