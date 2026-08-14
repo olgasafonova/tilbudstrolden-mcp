@@ -1,4 +1,4 @@
-import { createRequire } from "node:module";
+#!/usr/bin/env node
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { registerPrompts } from "./prompts.js";
@@ -8,11 +8,7 @@ import { registerRecipeTools } from "./tools/recipes.js";
 import { registerScoringTools } from "./tools/scoring.js";
 import { registerShoppingTools } from "./tools/shopping.js";
 import { registerTrackingTools } from "./tools/tracking.js";
-
-const require = createRequire(import.meta.url);
-const { version: SERVER_VERSION } = require("../package.json") as {
-  version: string;
-};
+import { SERVER_VERSION } from "./version.js";
 
 const server = new McpServer(
   {

@@ -27,6 +27,9 @@
     "node": ">=18.0.0"
   },
   "main": "dist/server.js",
+  "bin": {
+    "tilbudstrolden-mcp": "dist/server.js"
+  },
   "files": [
     "dist/",
     "LICENSE",

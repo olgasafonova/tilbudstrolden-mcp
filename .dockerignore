@@ -1,0 +1,9 @@
+.git
+.github
+.claude
+.beads
+node_modules
+dist
+coverage
+*.log
+.deslop-baseline.json
