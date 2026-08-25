@@ -10,6 +10,13 @@ updates:
       prefix: "deps"
     groups:
       npm-dependencies:
+        # Group minor and patch only. Majors get their own PR so they are
+        # reviewable: on 24-08-2026 a grouped bump titled "7 updates" carried
+        # typescript 5.3 -> 7.0.2, which broke typecheck (TS7 stopped
+        # auto-including @types/*). A major should never arrive unlabelled.
+        update-types:
+          - "minor"
+          - "patch"
         patterns:
           - "*"
     reviewers:
