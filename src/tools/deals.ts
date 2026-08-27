@@ -210,49 +210,65 @@ async function handleDealsThisWeek({ limit }: { limit: number }) {
 }
 
 export function registerDealTools(server: McpServer): void {
-  server.tool(
+  server.registerTool(
     "search_deals",
-    "Search grocery deals across stores by keyword. Supports Denmark (DK), Norway (NO), Sweden (SE), and Finland (FI) based on household country setting. USE WHEN: finding specific products, checking prices, comparing stores. NOT FOR: browsing one store's catalog (use get_store_offers) or generating a shopping list (use generate_shopping_list). Returns deals sorted by relevance with unit prices.",
     {
-      query: z
-        .string()
-        .describe(
-          "Search term in local language, e.g. 'hakket oksekød' (DK), 'kjøttdeig' (NO), 'köttfärs' (SE), 'jauheliha' (FI)",
-        ),
-      limit: z.number().optional().default(20).describe("Max results (default 20)"),
+      description:
+        "Search grocery deals across stores by keyword. Supports Denmark (DK), Norway (NO), Sweden (SE), and Finland (FI) based on household country setting. USE WHEN: finding specific products, checking prices, comparing stores. NOT FOR: browsing one store's catalog (use get_store_offers) or generating a shopping list (use generate_shopping_list). Returns deals sorted by relevance with unit prices.",
+      inputSchema: {
+        query: z
+          .string()
+          .describe(
+            "Search term in local language, e.g. 'hakket oksekød' (DK), 'kjøttdeig' (NO), 'köttfärs' (SE), 'jauheliha' (FI)",
+          ),
+        limit: z.number().optional().default(20).describe("Max results (default 20)"),
+      },
+      annotations: { readOnlyHint: true },
     },
     handleSearchDeals,
   );
 
-  server.tool(
+  server.registerTool(
     "get_store_offers",
-    "List current offers from a specific store. USE WHEN: browsing what's on sale at one store ('what's at Netto this week'). NOT FOR: searching across all stores (use search_deals) or checking best deals from all preferred stores (use deals_this_week). Returns offers with prices, unit prices, store name, and expiry dates.",
     {
-      store: z
-        .string()
-        .describe(
-          "Store name or dealer ID. Use list_stores to see available stores for your country.",
-        ),
-      limit: z.number().optional().default(50).describe("Max results"),
+      description:
+        "List current offers from a specific store. USE WHEN: browsing what's on sale at one store ('what's at Netto this week'). NOT FOR: searching across all stores (use search_deals) or checking best deals from all preferred stores (use deals_this_week). Returns offers with prices, unit prices, store name, and expiry dates.",
+      inputSchema: {
+        store: z
+          .string()
+          .describe(
+            "Store name or dealer ID. Use list_stores to see available stores for your country.",
+          ),
+        limit: z.number().optional().default(50).describe("Max results"),
+      },
+      annotations: { readOnlyHint: true },
     },
     handleGetStoreOffers,
   );
 
-  server.tool(
+  server.registerTool(
     "list_stores",
-    "List grocery chains with dealer IDs for your country (DK/NO/SE/FI). USE WHEN: finding store IDs for get_store_offers or setting up household preferred stores via update_household. NOT FOR: seeing deals (use search_deals or deals_this_week). Returns store names and dealer IDs. Full directory available for DK; NO/SE/FI show curated grocery chains.",
     {
-      query: z.string().optional().describe("Filter by name"),
-      all: z.boolean().optional().default(false).describe("Include non-grocery stores too"),
+      description:
+        "List grocery chains with dealer IDs for your country (DK/NO/SE/FI). USE WHEN: finding store IDs for get_store_offers or setting up household preferred stores via update_household. NOT FOR: seeing deals (use search_deals or deals_this_week). Returns store names and dealer IDs. Full directory available for DK; NO/SE/FI show curated grocery chains.",
+      inputSchema: {
+        query: z.string().optional().describe("Filter by name"),
+        all: z.boolean().optional().default(false).describe("Include non-grocery stores too"),
+      },
+      annotations: { readOnlyHint: true },
     },
     handleListStores,
   );
 
-  server.tool(
+  server.registerTool(
     "deals_this_week",
-    "Show the best current deals from your preferred stores. USE WHEN: browsing what's cheap this week, deciding what to cook based on deals ('what's on sale?'). NOT FOR: searching for a specific product (use search_deals). Requires household stores to be configured via update_household.",
     {
-      limit: z.number().optional().default(30).describe("Max deals per store (default 30)"),
+      description:
+        "Show the best current deals from your preferred stores. USE WHEN: browsing what's cheap this week, deciding what to cook based on deals ('what's on sale?'). NOT FOR: searching for a specific product (use search_deals). Requires household stores to be configured via update_household.",
+      inputSchema: {
+        limit: z.number().optional().default(30).describe("Max deals per store (default 30)"),
+      },
+      annotations: { readOnlyHint: true },
     },
     handleDealsThisWeek,
   );

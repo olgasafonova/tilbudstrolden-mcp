@@ -81,44 +81,63 @@ async function handleGetSpendLog({ weeks }: { weeks: number }) {
 }
 
 export function registerTrackingTools(server: McpServer): void {
-  server.tool(
+  server.registerTool(
     "log_meal",
-    "Record a cooked meal for rotation tracking. USE WHEN: logging what was cooked to avoid repeating meals in future planning. Deduplicates by date + recipe name. Returns confirmation with date, recipe, and people logged.",
     {
-      date: z.string().describe("YYYY-MM-DD"),
-      recipe: z.string().describe("Recipe name"),
-      people: z.array(z.string()).describe("Who ate"),
+      description:
+        "Record a cooked meal for rotation tracking. USE WHEN: logging what was cooked to avoid repeating meals in future planning. Deduplicates by date + recipe name. Returns confirmation with date, recipe, and people logged.",
+      inputSchema: {
+        date: z.string().describe("YYYY-MM-DD"),
+        recipe: z.string().describe("Recipe name"),
+        people: z.array(z.string()).describe("Who ate"),
+      },
+      // Upsert keyed by date + recipe: replaying the same args changes nothing.
+      // Can overwrite an existing same-key entry, so destructiveHint stays at its default.
+      annotations: { idempotentHint: true },
     },
     handleLogMeal,
   );
 
-  server.tool(
+  server.registerTool(
     "get_meal_history",
-    "Recent meal history for rotation planning. USE WHEN: checking what was cooked recently to avoid repetition, reviewing eating patterns. Returns meal entries with dates, recipe names, and who ate.",
     {
-      weeks: z.number().optional().default(4).describe("Weeks back (default 4)"),
+      description:
+        "Recent meal history for rotation planning. USE WHEN: checking what was cooked recently to avoid repetition, reviewing eating patterns. Returns meal entries with dates, recipe names, and who ate.",
+      inputSchema: {
+        weeks: z.number().optional().default(4).describe("Weeks back (default 4)"),
+      },
+      annotations: { readOnlyHint: true },
     },
     handleGetMealHistory,
   );
 
-  server.tool(
+  server.registerTool(
     "log_spend",
-    "Record grocery spending for budget tracking. USE WHEN: logging what was spent after a shopping trip. Returns confirmation with amount, store, date, and item count.",
     {
-      date: z.string().describe("YYYY-MM-DD"),
-      store: z.string().describe("Store name, e.g. 'Netto' or 'Føtex'"),
-      estimatedTotal: z.number().describe("Amount spent in local currency"),
-      items: z.number().describe("Items bought"),
-      notes: z.string().optional().default(""),
+      description:
+        "Record grocery spending for budget tracking. USE WHEN: logging what was spent after a shopping trip. Returns confirmation with amount, store, date, and item count.",
+      inputSchema: {
+        date: z.string().describe("YYYY-MM-DD"),
+        store: z.string().describe("Store name, e.g. 'Netto' or 'Føtex'"),
+        estimatedTotal: z.number().describe("Amount spent in local currency"),
+        items: z.number().describe("Items bought"),
+        notes: z.string().optional().default(""),
+      },
+      // Pure append: never deletes or overwrites, but a replayed call adds a duplicate row.
+      annotations: { destructiveHint: false, idempotentHint: false },
     },
     handleLogSpend,
   );
 
-  server.tool(
+  server.registerTool(
     "get_spend_log",
-    "Spending history with weekly averages and totals. USE WHEN: reviewing grocery budget, tracking spending trends. Returns spending entries with totals and weekly averages.",
     {
-      weeks: z.number().optional().default(8).describe("Weeks back (default 8)"),
+      description:
+        "Spending history with weekly averages and totals. USE WHEN: reviewing grocery budget, tracking spending trends. Returns spending entries with totals and weekly averages.",
+      inputSchema: {
+        weeks: z.number().optional().default(8).describe("Weeks back (default 8)"),
+      },
+      annotations: { readOnlyHint: true },
     },
     handleGetSpendLog,
   );

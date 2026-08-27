@@ -2,14 +2,15 @@
  * Test-only harness for exercising MCP tool and prompt handlers directly.
  *
  * The register* functions in src/tools/ take an McpServer and call
- * server.tool(name, description, schema, handler). This stub captures those
- * registrations so tests can run a handler in isolation, with the module's
- * external dependencies (api.js, store.js) mocked.
+ * server.registerTool(name, { description, inputSchema, annotations }, handler).
+ * This stub captures those registrations so tests can run a handler in
+ * isolation, with the module's external dependencies (api.js, store.js) mocked.
  *
  * Lives outside src/ on purpose: tsconfig compiles src/** only, so nothing
  * here reaches dist/, and biome (files.includes: src/**) skips it.
  */
 
+import type { ToolAnnotations } from "@modelcontextprotocol/sdk/types.js";
 import { z, type ZodRawShape } from "zod";
 
 export interface ToolResult {
@@ -25,6 +26,7 @@ export interface CapturedTool {
   name: string;
   description: string;
   schema: ZodRawShape;
+  annotations: ToolAnnotations | undefined;
   handler: (
     args: Record<string, unknown>,
     extra: unknown,
@@ -54,13 +56,22 @@ export function createServerStub(): ServerStub {
   const prompts = new Map<string, CapturedPrompt>();
 
   const server = {
-    tool(
+    registerTool(
       name: string,
-      description: string,
-      schema: ZodRawShape,
+      config: {
+        description: string;
+        inputSchema?: ZodRawShape;
+        annotations?: ToolAnnotations;
+      },
       handler: CapturedTool["handler"],
     ) {
-      tools.set(name, { name, description, schema, handler });
+      tools.set(name, {
+        name,
+        description: config.description,
+        schema: config.inputSchema ?? {},
+        annotations: config.annotations,
+        handler,
+      });
     },
     prompt(
       name: string,

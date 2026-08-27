@@ -143,50 +143,61 @@ async function handlePlanAndShop(args: PlanArgs) {
 }
 
 export function registerShoppingTools(server: McpServer): void {
-  server.tool(
+  server.registerTool(
     "generate_shopping_list",
-    "Deal-optimized shopping list from specific recipes, grouped by store. USE WHEN: preparing to shop for chosen recipes ('shopping list for Bolognese and Chili'). Aggregates quantities across recipes, computes pack sizes, flags expiring deals. NOT FOR: deciding what to cook (use score_recipes or plan_and_shop first). Requires recipes to exist (see add_recipe).",
     {
-      recipes: z.array(z.string()).describe("Recipe names"),
-      people: z.number().optional().describe("Household size (overrides stored household config)"),
-      excludePantry: z
-        .boolean()
-        .optional()
-        .default(true)
-        .describe("Skip pantry items (default true)"),
+      description:
+        "Deal-optimized shopping list from specific recipes, grouped by store. USE WHEN: preparing to shop for chosen recipes ('shopping list for Bolognese and Chili'). Aggregates quantities across recipes, computes pack sizes, flags expiring deals. NOT FOR: deciding what to cook (use score_recipes or plan_and_shop first). Requires recipes to exist (see add_recipe).",
+      inputSchema: {
+        recipes: z.array(z.string()).describe("Recipe names"),
+        people: z
+          .number()
+          .optional()
+          .describe("Household size (overrides stored household config)"),
+        excludePantry: z
+          .boolean()
+          .optional()
+          .default(true)
+          .describe("Skip pantry items (default true)"),
+      },
+      annotations: { readOnlyHint: true },
     },
     handleGenerateShoppingList,
   );
 
-  server.tool(
+  server.registerTool(
     "plan_and_shop",
-    "Score recipes, optimize a weekly meal plan, and generate a shopping list in one step. USE WHEN: 'plan my week', 'what should we eat?', 'make a meal plan with shopping list'. This is the main entry point for weekly dinner planning. NOT FOR: shopping for specific pre-chosen recipes (use generate_shopping_list). Returns meal plan (day-by-day with costs) followed by deal-optimized shopping list grouped by store.",
     {
-      days: z.number().optional().default(7).describe("Days to plan (default 7)"),
-      people: z.number().optional().describe("Household size (overrides stored config)"),
-      maxPerProtein: z
-        .number()
-        .optional()
-        .default(2)
-        .describe("Max same protein in plan (default 2)"),
-      maxPerCuisine: z
-        .number()
-        .optional()
-        .default(2)
-        .describe("Max same cuisine in plan (default 2)"),
-      maxSlowDays: z.number().optional().default(2).describe("Max slow-cook days (default 2)"),
-      excludeProteins: z
-        .array(z.string())
-        .optional()
-        .describe('Dietary exclusions, e.g. ["pork", "dairy"]. Also scans ingredient names.'),
-      slowOnlyOnDays: z
-        .array(z.number())
-        .optional()
-        .describe("Restrict slow recipes to these days (1-indexed). E.g. [6, 7]"),
-      preferCuisines: z
-        .record(z.string(), z.number())
-        .optional()
-        .describe('Soft cuisine preferences: {"asian": 3} = prefer at least 3 Asian dishes'),
+      description:
+        "Score recipes, optimize a weekly meal plan, and generate a shopping list in one step. USE WHEN: 'plan my week', 'what should we eat?', 'make a meal plan with shopping list'. This is the main entry point for weekly dinner planning. NOT FOR: shopping for specific pre-chosen recipes (use generate_shopping_list). Returns meal plan (day-by-day with costs) followed by deal-optimized shopping list grouped by store.",
+      inputSchema: {
+        days: z.number().optional().default(7).describe("Days to plan (default 7)"),
+        people: z.number().optional().describe("Household size (overrides stored config)"),
+        maxPerProtein: z
+          .number()
+          .optional()
+          .default(2)
+          .describe("Max same protein in plan (default 2)"),
+        maxPerCuisine: z
+          .number()
+          .optional()
+          .default(2)
+          .describe("Max same cuisine in plan (default 2)"),
+        maxSlowDays: z.number().optional().default(2).describe("Max slow-cook days (default 2)"),
+        excludeProteins: z
+          .array(z.string())
+          .optional()
+          .describe('Dietary exclusions, e.g. ["pork", "dairy"]. Also scans ingredient names.'),
+        slowOnlyOnDays: z
+          .array(z.number())
+          .optional()
+          .describe("Restrict slow recipes to these days (1-indexed). E.g. [6, 7]"),
+        preferCuisines: z
+          .record(z.string(), z.number())
+          .optional()
+          .describe('Soft cuisine preferences: {"asian": 3} = prefer at least 3 Asian dishes'),
+      },
+      annotations: { readOnlyHint: true },
     },
     handlePlanAndShop,
   );

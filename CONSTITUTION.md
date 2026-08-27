@@ -134,9 +134,17 @@ Codifies: `.github/workflows/ci.yml`, `.github/CODEOWNERS`, `.github/dependabot.
 
 ---
 
-## Articles considered and rejected
+## Article XII: Annotations tell the truth about what a tool does
 
-**Annotations tell the truth about what a tool does.** The portfolio's Go servers carry `ReadOnly`/`Destructive`/`Idempotent` hints with coherence tests; this repository declares no annotations at all — every registration uses the four-argument `server.tool(name, description, schema, handler)` overload, which carries none. `remove_recipe` deletes data with no destructive hint. An article here would introduce practice, not codify it. The gap is named so an amendment can close it once the code exists.
+Every registration goes through `server.registerTool(name, { description, inputSchema, annotations }, handler)` and declares `ToolAnnotations` that match the handler's actual behaviour: pure lookups carry `readOnlyHint: true`, `remove_recipe` carries `destructiveHint: true`, upsert-style writers (`add_recipe`, `log_meal`, `update_household`, `update_pantry`) carry `idempotentHint: true`, and `log_spend` — a pure append that duplicates on replay — carries `destructiveHint: false, idempotentHint: false`. A hint that cannot be argued from the handler stays unset so the client falls back to the spec's conservative defaults; no tool claims both read-only and destructive. Ratified by amendment 27-08-2026, closing the gap previously recorded under "Articles considered and rejected".
+
+Codifies: the `annotations` object in every `server.registerTool` call across `src/tools/*.ts`; `test/mcp-harness.ts`, which captures annotations through the same registration path.
+
+**Enforcement: mechanically checked.** `src/tools/annotations.test.ts` pins the truth per tool: all 18 tools declare annotations, every pure-lookup tool is read-only, no writer claims read-only, `remove_recipe` is destructive, `log_spend` is non-idempotent, and no tool is both read-only and destructive. Runs under `npm test` in CI. The remaining judgment — whether a *new* tool's hints match its handler — rests on review, but a new tool with no annotations at all fails the coverage assertion.
+
+---
+
+## Articles considered and rejected
 
 **Handlers never panic out via a generic recovery wrapper.** There is no `makeHandler` equivalent and no named-return machinery to translate. The actual practice — per-handler try/catch returning structured errors — is Article III. Writing the Go article's shape here would describe machinery that does not exist.
 
@@ -157,3 +165,4 @@ Codifies: `.github/workflows/ci.yml`, `.github/CODEOWNERS`, `.github/dependabot.
 | Date | Change |
 |------|--------|
 | 27-08-2026 | Ratified. Eleven articles, adapted from the `CONSTITUTION.md` in `gridctl/gridctl` (Apache-2.0, github.com/gridctl/gridctl) via the portfolio template, translated for TypeScript. |
+| 27-08-2026 | Article XII ratified: tool annotations moved from "considered and rejected" to an article, after all 18 registrations gained truthful `ToolAnnotations` (via `server.registerTool`) pinned by `src/tools/annotations.test.ts`. |

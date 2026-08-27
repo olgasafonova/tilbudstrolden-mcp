@@ -109,64 +109,83 @@ async function handleGetPantry() {
 }
 
 export function registerHouseholdTools(server: McpServer): void {
-  server.tool(
+  server.registerTool(
     "get_household",
-    "Get household config: people, dietary restrictions, preferred stores, servings. USE WHEN: checking current setup before meal planning, verifying store preferences. Returns onboarding guidance if not yet configured.",
-    {},
+    {
+      description:
+        "Get household config: people, dietary restrictions, preferred stores, servings. USE WHEN: checking current setup before meal planning, verifying store preferences. Returns onboarding guidance if not yet configured.",
+      inputSchema: {},
+      annotations: { readOnlyHint: true },
+    },
     handleGetHousehold,
   );
 
-  server.tool(
+  server.registerTool(
     "update_household",
-    `Set household members, dietary restrictions, preferred stores, country, servings. USE WHEN: first-time setup or changing household config. Required before shopping lists can filter by preferred stores. TIP: use list_stores to find dealer IDs. Set country to change market: ${SUPPORTED_COUNTRIES.join(", ")}. Returns updated config summary: country, people count, store count, default servings.`,
     {
-      country: z
-        .string()
-        .optional()
-        .describe(
-          `Country code: ${SUPPORTED_COUNTRIES.join(", ")}. Defaults to DK. Changes which stores and deals are shown.`,
-        ),
-      people: z
-        .array(
-          z.object({
-            name: z.string().describe("Name"),
-            dietaryRestrictions: z.array(z.string()).describe("e.g. 'no pork', 'lactose-free'"),
-            defaultSchedule: z
-              .record(z.string(), z.boolean())
-              .describe("Days at home, e.g. {monday: true}. Omitted = true."),
-          }),
-        )
-        .optional()
-        .describe("People in household"),
-      stores: z
-        .array(
-          z.object({
-            name: z.string().describe("Store name"),
-            dealerId: z.string().describe("Dealer ID from list_stores"),
-            priority: z.number().describe("1 = closest/default"),
-          }),
-        )
-        .optional()
-        .describe("Preferred stores"),
-      defaultServings: z.number().optional().describe("Default servings"),
+      description: `Set household members, dietary restrictions, preferred stores, country, servings. USE WHEN: first-time setup or changing household config. Required before shopping lists can filter by preferred stores. TIP: use list_stores to find dealer IDs. Set country to change market: ${SUPPORTED_COUNTRIES.join(", ")}. Returns updated config summary: country, people count, store count, default servings.`,
+      inputSchema: {
+        country: z
+          .string()
+          .optional()
+          .describe(
+            `Country code: ${SUPPORTED_COUNTRIES.join(", ")}. Defaults to DK. Changes which stores and deals are shown.`,
+          ),
+        people: z
+          .array(
+            z.object({
+              name: z.string().describe("Name"),
+              dietaryRestrictions: z.array(z.string()).describe("e.g. 'no pork', 'lactose-free'"),
+              defaultSchedule: z
+                .record(z.string(), z.boolean())
+                .describe("Days at home, e.g. {monday: true}. Omitted = true."),
+            }),
+          )
+          .optional()
+          .describe("People in household"),
+        stores: z
+          .array(
+            z.object({
+              name: z.string().describe("Store name"),
+              dealerId: z.string().describe("Dealer ID from list_stores"),
+              priority: z.number().describe("1 = closest/default"),
+            }),
+          )
+          .optional()
+          .describe("Preferred stores"),
+        defaultServings: z.number().optional().describe("Default servings"),
+      },
+      // Patch semantics: the same args replayed produce the same config. Provided fields
+      // replace their previous values wholesale, so destructiveHint stays at its default.
+      annotations: { idempotentHint: true },
     },
     handleUpdateHousehold,
   );
 
-  server.tool(
+  server.registerTool(
     "update_pantry",
-    "Add or remove pantry items (excluded from shopping lists). USE WHEN: updating stock after shopping or noting staples you always have. Items are matched case-insensitively. Returns updated pantry item list.",
     {
-      add: z.array(z.string()).optional().default([]).describe("Items to add to pantry"),
-      remove: z.array(z.string()).optional().default([]).describe("Items to remove from pantry"),
+      description:
+        "Add or remove pantry items (excluded from shopping lists). USE WHEN: updating stock after shopping or noting staples you always have. Items are matched case-insensitively. Returns updated pantry item list.",
+      inputSchema: {
+        add: z.array(z.string()).optional().default([]).describe("Items to add to pantry"),
+        remove: z.array(z.string()).optional().default([]).describe("Items to remove from pantry"),
+      },
+      // Set semantics: replaying the same add/remove lists changes nothing.
+      // remove deletes entries, so destructiveHint stays at its default.
+      annotations: { idempotentHint: true },
     },
     handleUpdatePantry,
   );
 
-  server.tool(
+  server.registerTool(
     "get_pantry",
-    "List pantry items (excluded from shopping lists). USE WHEN: checking what's already stocked before generating a shopping list. Returns list of pantry item names.",
-    {},
+    {
+      description:
+        "List pantry items (excluded from shopping lists). USE WHEN: checking what's already stocked before generating a shopping list. Returns list of pantry item names.",
+      inputSchema: {},
+      annotations: { readOnlyHint: true },
+    },
     handleGetPantry,
   );
 }

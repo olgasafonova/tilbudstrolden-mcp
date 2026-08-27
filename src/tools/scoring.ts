@@ -315,49 +315,59 @@ async function handleScoreRecipes(args: ScoreRecipesArgs) {
 }
 
 export function registerScoringTools(server: McpServer): void {
-  server.tool(
+  server.registerTool(
     "score_recipes",
-    "Score all saved recipes against current deals, optionally optimize a weekly meal plan. USE WHEN: deciding what to cook based on current deals ('what's cheapest this week'), comparing recipe costs. NOT FOR: generating a shopping list (use generate_shopping_list or plan_and_shop). Shows deal coverage %, estimated cost, and confidence levels per ingredient.",
     {
-      optimize: z.boolean().optional().default(false).describe("Also generate optimal weekly plan"),
-      days: z.number().optional().default(7).describe("Days to plan (default 7)"),
-      maxPerProtein: z
-        .number()
-        .optional()
-        .default(2)
-        .describe("Max same protein in plan (default 2)"),
-      maxPerCuisine: z
-        .number()
-        .optional()
-        .default(2)
-        .describe("Max same cuisine in plan (default 2)"),
-      maxSlowDays: z
-        .number()
-        .optional()
-        .default(2)
-        .describe("Max slow-cook days in plan (default 2)"),
-      excludeProteins: z
-        .array(z.string())
-        .optional()
-        .describe(
-          'Dietary exclusions. Checks both recipe type and individual ingredients. E.g. ["pork"] also catches bacon in vegetarian recipes. Options: pork, beef, lamb, fish, shellfish, dairy, gluten, beans, nuts, egg',
-        ),
-      allowProteinOnDays: z
-        .record(z.string(), z.array(z.number()))
-        .optional()
-        .describe(
-          'Per-day exceptions for excluded proteins (1-indexed). E.g. {"pork": [2]} = allow pork on day 2 (Tuesday)',
-        ),
-      slowOnlyOnDays: z
-        .array(z.number())
-        .optional()
-        .describe("Restrict slow recipes to these days only (1-indexed). E.g. [6, 7] for weekends"),
-      preferCuisines: z
-        .record(z.string(), z.number())
-        .optional()
-        .describe(
-          'Soft cuisine preferences: {"asian": 3} = prefer at least 3 Asian dishes. Best-effort, won\'t fail if impossible.',
-        ),
+      description:
+        "Score all saved recipes against current deals, optionally optimize a weekly meal plan. USE WHEN: deciding what to cook based on current deals ('what's cheapest this week'), comparing recipe costs. NOT FOR: generating a shopping list (use generate_shopping_list or plan_and_shop). Shows deal coverage %, estimated cost, and confidence levels per ingredient.",
+      inputSchema: {
+        optimize: z
+          .boolean()
+          .optional()
+          .default(false)
+          .describe("Also generate optimal weekly plan"),
+        days: z.number().optional().default(7).describe("Days to plan (default 7)"),
+        maxPerProtein: z
+          .number()
+          .optional()
+          .default(2)
+          .describe("Max same protein in plan (default 2)"),
+        maxPerCuisine: z
+          .number()
+          .optional()
+          .default(2)
+          .describe("Max same cuisine in plan (default 2)"),
+        maxSlowDays: z
+          .number()
+          .optional()
+          .default(2)
+          .describe("Max slow-cook days in plan (default 2)"),
+        excludeProteins: z
+          .array(z.string())
+          .optional()
+          .describe(
+            'Dietary exclusions. Checks both recipe type and individual ingredients. E.g. ["pork"] also catches bacon in vegetarian recipes. Options: pork, beef, lamb, fish, shellfish, dairy, gluten, beans, nuts, egg',
+          ),
+        allowProteinOnDays: z
+          .record(z.string(), z.array(z.number()))
+          .optional()
+          .describe(
+            'Per-day exceptions for excluded proteins (1-indexed). E.g. {"pork": [2]} = allow pork on day 2 (Tuesday)',
+          ),
+        slowOnlyOnDays: z
+          .array(z.number())
+          .optional()
+          .describe(
+            "Restrict slow recipes to these days only (1-indexed). E.g. [6, 7] for weekends",
+          ),
+        preferCuisines: z
+          .record(z.string(), z.number())
+          .optional()
+          .describe(
+            'Soft cuisine preferences: {"asian": 3} = prefer at least 3 Asian dishes. Best-effort, won\'t fail if impossible.',
+          ),
+      },
+      annotations: { readOnlyHint: true },
     },
     handleScoreRecipes,
   );

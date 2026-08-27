@@ -92,51 +92,66 @@ async function handleRemoveRecipe({ name }: { name: string }) {
 }
 
 export function registerRecipeTools(server: McpServer): void {
-  server.tool(
+  server.registerTool(
     "get_recipes",
-    "List saved recipes with ingredients, metadata, and search terms. USE WHEN: reviewing recipe library, checking what's available for meal planning. Returns onboarding guidance if no recipes exist yet.",
-    {},
+    {
+      description:
+        "List saved recipes with ingredients, metadata, and search terms. USE WHEN: reviewing recipe library, checking what's available for meal planning. Returns onboarding guidance if no recipes exist yet.",
+      inputSchema: {},
+      annotations: { readOnlyHint: true },
+    },
     handleGetRecipes,
   );
 
-  server.tool(
+  server.registerTool(
     "add_recipe",
-    "Add or update a recipe for meal planning and deal scoring. USE WHEN: saving a new recipe or updating an existing one. TIP: searchTerms defaults to [ingredient name] and category defaults to 'other' if omitted, reducing input friction. Overwrites existing recipe with same name. Returns confirmation with recipe name, complexity, cuisine, protein, and ingredient count.",
     {
-      name: z.string().describe("Recipe name"),
-      servings: z.number().optional().default(4).describe("Servings (default 4)"),
-      complexity: z
-        .enum(["quick", "medium", "slow"])
-        .describe("quick (<30min), medium (30-60min), slow (60min+)"),
-      cuisineType: z.string().describe("e.g. asian, danish, italian, mexican"),
-      proteinType: z.string().describe("e.g. chicken, beef, pork, fish, vegetarian"),
-      ingredients: z
-        .array(
-          z.object({
-            name: z.string(),
-            quantity: z.string().describe("e.g. '500g', '1L', '2 stk'"),
-            searchTerms: z
-              .array(z.string())
-              .optional()
-              .describe("Danish deal search terms. Defaults to [name] if omitted."),
-            category: z
-              .string()
-              .optional()
-              .describe(
-                "meat|dairy|produce|bakery|frozen|pantry|drinks|other. Defaults to 'other'.",
-              ),
-          }),
-        )
-        .describe("Ingredients"),
+      description:
+        "Add or update a recipe for meal planning and deal scoring. USE WHEN: saving a new recipe or updating an existing one. TIP: searchTerms defaults to [ingredient name] and category defaults to 'other' if omitted, reducing input friction. Overwrites existing recipe with same name. Returns confirmation with recipe name, complexity, cuisine, protein, and ingredient count.",
+      inputSchema: {
+        name: z.string().describe("Recipe name"),
+        servings: z.number().optional().default(4).describe("Servings (default 4)"),
+        complexity: z
+          .enum(["quick", "medium", "slow"])
+          .describe("quick (<30min), medium (30-60min), slow (60min+)"),
+        cuisineType: z.string().describe("e.g. asian, danish, italian, mexican"),
+        proteinType: z.string().describe("e.g. chicken, beef, pork, fish, vegetarian"),
+        ingredients: z
+          .array(
+            z.object({
+              name: z.string(),
+              quantity: z.string().describe("e.g. '500g', '1L', '2 stk'"),
+              searchTerms: z
+                .array(z.string())
+                .optional()
+                .describe("Danish deal search terms. Defaults to [name] if omitted."),
+              category: z
+                .string()
+                .optional()
+                .describe(
+                  "meat|dairy|produce|bakery|frozen|pantry|drinks|other. Defaults to 'other'.",
+                ),
+            }),
+          )
+          .describe("Ingredients"),
+      },
+      // Upsert: same args replayed produce the same stored recipe. Can overwrite an
+      // existing recipe with the same name, so destructiveHint is left at its default.
+      annotations: { idempotentHint: true },
     },
     handleAddRecipe,
   );
 
-  server.tool(
+  server.registerTool(
     "remove_recipe",
-    "Remove a recipe by name. USE WHEN: cleaning up the recipe library. Case-insensitive name matching. Returns confirmation or 'not found' message.",
     {
-      name: z.string().describe("Recipe name"),
+      description:
+        "Remove a recipe by name. USE WHEN: cleaning up the recipe library. Case-insensitive name matching. Returns confirmation or 'not found' message.",
+      inputSchema: {
+        name: z.string().describe("Recipe name"),
+      },
+      // Deletes data; removing an already-removed recipe is a no-op.
+      annotations: { destructiveHint: true, idempotentHint: true },
     },
     handleRemoveRecipe,
   );
