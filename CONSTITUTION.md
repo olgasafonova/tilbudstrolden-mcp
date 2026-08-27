@@ -14,7 +14,7 @@ Written 27-08-2026 against `main` at `@modelcontextprotocol/sdk` ^1.30.0, 18 reg
 
 ## Article I: Tool registration is declarative, per-domain, and tested through the real path
 
-Adding a tool means one `server.tool(name, description, zodShape, handler)` call inside the matching domain module in `src/tools/` (deals, household, recipes, scoring, shopping, tracking), whose `register*Tools` function `src/server.ts` calls once at startup. Tests do not re-implement registration: `test/mcp-harness.ts` captures the same `server.tool` calls through a stub, and its `callTool` parses raw arguments through `z.object(tool.schema)` — the same validation the SDK applies — before running the handler. The harness lives outside `src/` on purpose, so it never reaches `dist/` and Biome (scoped to `src/**`) never lints it.
+Adding a tool means one `server.registerTool(name, { description, inputSchema, annotations }, handler)` call inside the matching domain module in `src/tools/` (deals, household, recipes, scoring, shopping, tracking), whose `register*Tools` function `src/server.ts` calls once at startup (shape amended 27-08-2026 with Article XII; previously the deprecated 4-arg `server.tool` overload, which carried no annotations). Tests do not re-implement registration: `test/mcp-harness.ts` captures the same `registerTool` calls through a stub — annotations included — and its `callTool` parses raw arguments through `z.object(tool.schema)` — the same validation the SDK applies — before running the handler. The harness lives outside `src/` on purpose, so it never reaches `dist/` and Biome (scoped to `src/**`) never lints it.
 
 Codifies: `src/server.ts`, `src/tools/*.ts` (each ends in a `register*Tools` function), `test/mcp-harness.ts`.
 
