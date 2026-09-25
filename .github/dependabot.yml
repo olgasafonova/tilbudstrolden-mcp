@@ -19,6 +19,16 @@ updates:
           - "patch"
         patterns:
           - "*"
+      vitest-major:
+        # vitest and @vitest/* pin each other as exact peers, so a major bump
+        # of one alone fails `npm ci` with ERESOLVE. On 25-09-2026 vitest 5
+        # arrived as two separate PRs (#38, #39), each unmergeable on its own.
+        # They still get their own PR, apart from the minor/patch group.
+        update-types:
+          - "major"
+        patterns:
+          - "vitest"
+          - "@vitest/*"
     reviewers:
       - "olgasafonova"
 
