@@ -65,6 +65,24 @@ function makeScoredIngredient(overrides: Partial<ScoredIngredient> = {}): Scored
   };
 }
 
+function groupNamesById(stores: Record<string, string>): Map<string, string[]> {
+  const idToNames = new Map<string, string[]>();
+  for (const [name, id] of Object.entries(stores)) {
+    const names = idToNames.get(id) ?? [];
+    names.push(name);
+    idToNames.set(id, names);
+  }
+  return idToNames;
+}
+
+// Two store names are treated as aliases if they share any 3-character substring.
+function sharesTrigram(a: string, b: string): boolean {
+  for (let j = 0; j <= a.length - 3; j++) {
+    if (b.includes(a.slice(j, j + 3))) return true;
+  }
+  return false;
+}
+
 // ============================================================
 // Scenario 1: Data migration from v0.3 to v0.4
 // ============================================================
@@ -942,35 +960,16 @@ describe("Scenario: Known store IDs are valid", () => {
 
   it("no duplicate store IDs within a locale (except aliases)", () => {
     for (const code of SUPPORTED_COUNTRIES) {
-      const locale = getLocale(code);
-      const idToNames = new Map<string, string[]>();
-      for (const [name, id] of Object.entries(locale.knownStores)) {
-        const names = idToNames.get(id) ?? [];
-        names.push(name);
-        idToNames.set(id, names);
-      }
+      const idToNames = groupNamesById(getLocale(code).knownStores);
       // Aliases are OK (rema and rema 1000 share an ID)
       // But completely unrelated stores sharing an ID would be a bug
-      // Allow aliases: names that share 3+ consecutive characters are related
       for (const [id, names] of idToNames) {
-        if (names.length > 1) {
-          const lower = names.map((n) => n.toLowerCase());
-          for (let i = 1; i < lower.length; i++) {
-            const a = lower[0];
-            const b = lower[i];
-            // Check for shared substring of length 3+
-            let hasOverlap = false;
-            for (let j = 0; j <= a.length - 3; j++) {
-              if (b.includes(a.slice(j, j + 3))) {
-                hasOverlap = true;
-                break;
-              }
-            }
-            expect(
-              hasOverlap,
-              `${code}: stores "${names.join('", "')}" share ID "${id}" but look unrelated`,
-            ).toBe(true);
-          }
+        const lower = names.map((n) => n.toLowerCase());
+        for (let i = 1; i < lower.length; i++) {
+          expect(
+            sharesTrigram(lower[0], lower[i]),
+            `${code}: stores "${names.join('", "')}" share ID "${id}" but look unrelated`,
+          ).toBe(true);
         }
       }
     }
