@@ -50,14 +50,14 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
-    "zod": "^4.5.4"
+    "zod": "^4.6.2"
   },
   "overrides": {
     "path-to-regexp": "^8.4.0"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.12",
-    "@types/node": "^26.4.1",
+    "@biomejs/biome": "^2.5.13",
+    "@types/node": "^26.5.1",
     "@vitest/coverage-v8": "^4.1.11",
     "tsx": "^4.23.13",
     "typescript": "^7.0.2",
