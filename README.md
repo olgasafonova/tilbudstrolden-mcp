@@ -8,6 +8,10 @@
 
 **The deal troll that lives under the bridge between your fridge and your wallet.**
 
+https://github.com/user-attachments/assets/23ffe6fc-9d5d-4a46-904f-bc7a83f3f421
+
+<sub>The meal plan and shopping list in the video are real `plan_and_shop` output, with deals captured on 26-09-2026.</sub>
+
 <p align="center">
   <img src="assets/trolden-nordic.png" alt="TilbudsTrolden with Nordic flags" width="380" />
   &nbsp;&nbsp;
