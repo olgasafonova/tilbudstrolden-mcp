@@ -204,7 +204,29 @@ export function aggregateQuantities(
   }
 
   if (baseUnit === null || totalAmount <= 0) return null;
-  return { totalAmount: Math.round(totalAmount), unit: baseUnit };
+  return { totalAmount: roundTotal(totalAmount, baseUnit), unit: baseUnit };
+}
+
+// Float noise from scaling (0.1 * 3 = 0.30000000000000004) must not push a
+// countable total up a whole item.
+const CEIL_EPSILON = 1e-9;
+
+/**
+ * Round an aggregated total to something you can buy. Countable items round up:
+ * four recipes each needing 0.75 onion need 3 onions, and 1.25 lemons means
+ * buying 2. Weights and volumes round to the nearest whole unit.
+ */
+function roundTotal(amount: number, unit: string): number {
+  return unit === "stk" ? Math.ceil(amount - CEIL_EPSILON) : Math.round(amount);
+}
+
+/**
+ * Round one recipe's scaled share for display. Countable items keep two
+ * decimals so the parts visibly add up to the total ("0.75 stk" four times is
+ * 3 stk); rounding each part to a whole item showed "1 + 1 + 1 + 1 = 3".
+ */
+export function roundShare(amount: number, unit: string): number {
+  return unit === "stk" ? Math.round(amount * 100) / 100 : Math.round(amount);
 }
 
 /**

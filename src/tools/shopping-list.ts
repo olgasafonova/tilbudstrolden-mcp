@@ -9,6 +9,7 @@ import {
   findBestDeal,
   formatQuantity,
   parseQuantity,
+  roundShare,
 } from "../scoring.js";
 import * as store from "../store.js";
 import { daysUntilExpiry, expiryTag } from "./shared.js";
@@ -93,7 +94,7 @@ function buildDisplayQuantity(
         const p = parseQuantity(c.quantity);
         if (!p) return c.quantity;
         const scale = c.recipeServings > 0 ? householdSize / c.recipeServings : 1;
-        return formatQuantity(Math.round(p.amount * scale), p.unit);
+        return formatQuantity(roundShare(p.amount * scale, p.unit), p.unit);
       })
       .join(" + ");
     displayQty = `${perRecipe} = ${formatQuantity(aggregated.totalAmount, aggregated.unit)}`;
@@ -158,6 +159,7 @@ async function resolveDealMap(
   existingDealMap: Map<string, Offer[]> | undefined,
   ingredients: ReturnType<typeof collectIngredients>,
   locale: ReturnType<typeof getLocale>,
+  dealerIds: string[],
 ): Promise<Map<string, Offer[]>> {
   if (existingDealMap) return existingDealMap;
   const allSearchTerms = new Set<string>();
@@ -169,6 +171,7 @@ async function resolveDealMap(
     queries: [...allSearchTerms],
     limit: 8,
     country: locale.country,
+    dealerIds,
   });
 }
 
@@ -263,7 +266,12 @@ export async function buildShoppingList(
     return "All ingredients are in your pantry. Nothing to buy!";
   }
 
-  const dealMap = await resolveDealMap(existingDealMap, allIngredients, locale);
+  const dealMap = await resolveDealMap(
+    existingDealMap,
+    allIngredients,
+    locale,
+    household.stores.map((s) => s.dealerId),
+  );
 
   const tally = tallyIngredients(allIngredients, {
     dealMap,

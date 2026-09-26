@@ -68,16 +68,16 @@ function formatMealPlan(
   const parts: string[] = [`# ${days}-day meal plan (${householdSize} people)\n`];
 
   const basket = calculateBasketCost(bestPlan.recipes);
-  parts.push(`Estimated basket: ~${basket.totalCost} ${currency}`);
+  parts.push(`Estimated basket: ~${Math.round(basket.totalCost)} ${currency}`);
   if (basket.sharedSavings > 0) {
-    parts.push(`Shared ingredient savings: ~${basket.sharedSavings} ${currency}`);
+    parts.push(`Shared ingredient savings: ~${Math.round(basket.sharedSavings)} ${currency}`);
   }
   parts.push("");
 
   for (let i = 0; i < bestPlan.recipes.length; i++) {
     const r = bestPlan.recipes[i];
     parts.push(
-      `Day ${i + 1}: ${r.name} (~${r.estimatedCost} ${currency}) [${r.proteinType}, ${r.cuisineType}, ${r.complexity}]`,
+      `Day ${i + 1}: ${r.name} (~${Math.round(r.estimatedCost)} ${currency}) [${r.proteinType}, ${r.cuisineType}, ${r.complexity}]`,
     );
   }
 
@@ -99,6 +99,7 @@ async function handlePlanAndShop(args: PlanArgs) {
       pantrySet,
       householdSize,
       locale,
+      household.stores.map((s) => s.dealerId),
     );
 
     if (scored.length < days) {

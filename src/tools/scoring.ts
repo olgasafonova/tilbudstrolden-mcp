@@ -121,6 +121,7 @@ export async function scoreAllRecipes(
   pantrySet: Set<string>,
   householdSize: number,
   locale?: Locale,
+  dealerIds: string[] = [],
 ): Promise<ScoreResult> {
   const recipes = await store.getRecipes();
   if (recipes.length === 0) return { scored: [], dealMap: new Map() };
@@ -132,6 +133,7 @@ export async function scoreAllRecipes(
     queries: [...allTerms],
     limit: 8,
     country: countryId,
+    dealerIds,
   });
 
   // Score each recipe
@@ -271,9 +273,9 @@ function formatOptimizedPlan(
   }
 
   const basket = calculateBasketCost(bestPlan.recipes);
-  const lines = [`Total basket: ~${basket.totalCost} ${cur} for ${days} days`];
+  const lines = [`Total basket: ~${Math.round(basket.totalCost)} ${cur} for ${days} days`];
   if (basket.sharedSavings > 0) {
-    lines.push(`Shared ingredient savings: ~${basket.sharedSavings} ${cur}`);
+    lines.push(`Shared ingredient savings: ~${Math.round(basket.sharedSavings)} ${cur}`);
   }
   lines.push(`Unique items to buy: ${basket.uniqueIngredients}\n`);
   for (let i = 0; i < bestPlan.recipes.length; i++) {
@@ -294,7 +296,14 @@ async function handleScoreRecipes(args: ScoreRecipesArgs) {
     const preferredStores = new Set(household.stores.map((s) => s.name));
 
     const householdSize = household.people.length || household.defaultServings;
-    const { scored } = await scoreAllRecipes(preferredStores, pantrySet, householdSize, locale);
+    const dealerIds = household.stores.map((s) => s.dealerId);
+    const { scored } = await scoreAllRecipes(
+      preferredStores,
+      pantrySet,
+      householdSize,
+      locale,
+      dealerIds,
+    );
 
     const parts = [
       `# Recipe scores (${scored.length} recipes)\n`,
