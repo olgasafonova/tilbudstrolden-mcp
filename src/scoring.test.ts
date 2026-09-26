@@ -958,3 +958,56 @@ describe("roundShare", () => {
     expect(roundShare(12.4, "ml")).toBe(12);
   });
 });
+
+// --- minced vs whole cut (bead 86e) ---
+
+describe("findBestDeal meat form", () => {
+  const offer = (id: string, heading: string): Offer => ({
+    id,
+    heading,
+    description: null,
+    price: 30,
+    prePrice: null,
+    currency: "DKK",
+    quantity: 400,
+    unit: "g",
+    pricePerUnit: null,
+    store: "Lidl",
+    storeId: "71c90",
+    validFrom: null,
+    validUntil: null,
+    imageUrl: null,
+  });
+
+  it("does not sell minced chicken as chicken breast", () => {
+    const deals = new Map([["kylling", [offer("m", "Hakket kylling 7-10%")]]]);
+    const result = findBestDeal(
+      { name: "Kyllingebryst", searchTerms: ["kylling"], category: "meat" },
+      deals,
+      new Set(),
+    );
+    expect(result.best).toBeNull();
+  });
+
+  it("prefers the fillet when both are on offer", () => {
+    const deals = new Map([
+      ["kylling", [offer("m", "Hakket kylling 7-10%"), offer("f", "Kyllingebrystfilet")]],
+    ]);
+    const result = findBestDeal(
+      { name: "Kyllingebryst", searchTerms: ["kylling"], category: "meat" },
+      deals,
+      new Set(),
+    );
+    expect(result.best?.id).toBe("f");
+  });
+
+  it("still matches minced beef to a minced-beef recipe", () => {
+    const deals = new Map([["hakket oksekød", [offer("b", "Hakket oksekød 8-12%")]]]);
+    const result = findBestDeal(
+      { name: "Hakket oksekød", searchTerms: ["hakket oksekød"], category: "meat" },
+      deals,
+      new Set(),
+    );
+    expect(result.best?.id).toBe("b");
+  });
+});

@@ -12,7 +12,7 @@ import {
   roundShare,
 } from "../scoring.js";
 import * as store from "../store.js";
-import { daysUntilExpiry, expiryTag } from "./shared.js";
+import { daysUntilExpiry, expiryTag, resolveStoreScope } from "./shared.js";
 
 /** Ingredient data aggregated across multiple recipes */
 interface AggregatedIngredient {
@@ -259,19 +259,15 @@ export async function buildShoppingList(
   const pantrySet = new Set(pantry.map((p) => p.toLowerCase()));
   const household = await store.getHousehold();
   const locale = getLocale(household.country);
-  const preferredStores = new Set(household.stores.map((s) => s.name));
+  const scope = resolveStoreScope(household, locale);
+  const preferredStores = scope.names;
 
   const allIngredients = collectIngredients(selectedRecipes, pantrySet);
   if (allIngredients.size === 0) {
     return "All ingredients are in your pantry. Nothing to buy!";
   }
 
-  const dealMap = await resolveDealMap(
-    existingDealMap,
-    allIngredients,
-    locale,
-    household.stores.map((s) => s.dealerId),
-  );
+  const dealMap = await resolveDealMap(existingDealMap, allIngredients, locale, scope.dealerIds);
 
   const tally = tallyIngredients(allIngredients, {
     dealMap,
@@ -310,6 +306,40 @@ function addToTally(tally: ShoppingTally, r: IngredientShoppingResult): void {
   }
 }
 
+/**
+ * Merge ingredients whose best deal is the same offer. Recipes name one product
+ * differently ("Kyllingebryst" in one, "Kyllingefilet" in another), and each
+ * name used to be priced on its own, so a plan bought the same pack twice. The
+ * merged line sums both needs and is priced once.
+ */
+function mergeSharedOffers(
+  allIngredients: Map<string, AggregatedIngredient>,
+  ctx: ShoppingContext,
+): Map<string, AggregatedIngredient> {
+  const byOffer = new Map<string, AggregatedIngredient>();
+  const merged = new Map<string, AggregatedIngredient>();
+  for (const [key, ing] of allIngredients) {
+    const offerId = findBestDeal(ing, ctx.dealMap, ctx.preferredStores, ctx.locale).best?.id;
+    const owner = offerId ? byOffer.get(offerId) : undefined;
+    if (!owner) {
+      const copy = {
+        ...ing,
+        searchTerms: [...ing.searchTerms],
+        contributions: [...ing.contributions],
+        fromRecipes: [...ing.fromRecipes],
+      };
+      merged.set(key, copy);
+      if (offerId) byOffer.set(offerId, copy);
+      continue;
+    }
+    owner.name = `${owner.name} + ${ing.name}`;
+    owner.contributions.push(...ing.contributions);
+    for (const r of ing.fromRecipes) if (!owner.fromRecipes.includes(r)) owner.fromRecipes.push(r);
+    for (const t of ing.searchTerms) if (!owner.searchTerms.includes(t)) owner.searchTerms.push(t);
+  }
+  return merged;
+}
+
 function tallyIngredients(
   allIngredients: Map<string, AggregatedIngredient>,
   ctx: ShoppingContext,
@@ -321,7 +351,7 @@ function tallyIngredients(
     expiringWarnings: [],
     grandTotal: 0,
   };
-  for (const [, ing] of allIngredients) {
+  for (const [, ing] of mergeSharedOffers(allIngredients, ctx)) {
     addToTally(tally, processIngredientForList(ing, ctx));
   }
   return tally;

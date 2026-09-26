@@ -323,7 +323,11 @@ describe("score_recipes tool", () => {
   it("uses the household country's currency", async () => {
     vi.mocked(store.getHousehold).mockResolvedValue(makeHousehold({ country: "FI" }));
     vi.mocked(store.getRecipes).mockResolvedValue([beefRecipe()]);
-    vi.mocked(api.searchDealsBatch).mockResolvedValue(new Map([["hakket oksekød", [beefOffer]]]));
+    // A household with no stores plans across its own country's chains, so the
+    // offer has to come from a Finnish one to count.
+    vi.mocked(api.searchDealsBatch).mockResolvedValue(
+      new Map([["hakket oksekød", [{ ...beefOffer, store: "Prisma" }]]]),
+    );
 
     const text = textOf(await callTool(stub, "score_recipes", {}));
     expect(text).toContain("EUR (deals on 100% of ingredients)");

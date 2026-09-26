@@ -4,7 +4,7 @@ import { getLocale } from "../locales.js";
 import { calculateBasketCost, findOptimalWeek } from "../scoring.js";
 import * as store from "../store.js";
 import { scoreAllRecipes } from "./scoring.js";
-import { errorResult } from "./shared.js";
+import { defaultStoresNote, errorResult, resolveStoreScope } from "./shared.js";
 import { buildShoppingList } from "./shopping-list.js";
 
 interface ShoppingListArgs {
@@ -91,15 +91,15 @@ async function handlePlanAndShop(args: PlanArgs) {
     const locale = getLocale(household.country);
     const pantry = await store.getPantry();
     const pantrySet = new Set(pantry.map((p) => p.toLowerCase()));
-    const preferredStores = new Set(household.stores.map((s) => s.name));
+    const scope = resolveStoreScope(household, locale);
     const householdSize = people ?? (household.people.length || household.defaultServings);
 
     const { scored, dealMap: cachedDeals } = await scoreAllRecipes(
-      preferredStores,
+      scope.names,
       pantrySet,
       householdSize,
       locale,
-      household.stores.map((s) => s.dealerId),
+      scope.dealerIds,
     );
 
     if (scored.length < days) {
@@ -125,6 +125,7 @@ async function handlePlanAndShop(args: PlanArgs) {
     }
 
     const parts = formatMealPlan(bestPlan, days, householdSize, locale.currency);
+    if (scope.usingDefaults) parts.splice(1, 0, `${defaultStoresNote(locale)}\n`);
 
     // Generate shopping list for the planned recipes
     const allRecipes = await store.getRecipes();

@@ -374,6 +374,8 @@ export const SCORE = {
   MODIFIER_PENALTY: -40,
   /** Search term not found in heading at all */
   NO_MATCH_PENALTY: -50,
+  /** Minced offer for a whole cut (breast, fillet): drops below viability */
+  FORM_MISMATCH_PENALTY: -60,
   VIABILITY_THRESHOLD: 30,
   /** Above this = auto-accept; below = show candidates for Claude to validate */
   CONFIDENT_THRESHOLD: 55,
@@ -447,6 +449,8 @@ interface MatchIndicators {
   raw: string[];
   bundlePatterns: string[];
   modifierPrepositions: string[];
+  minced: string[];
+  wholeCut: string[];
 }
 
 /** Everything needed to score a deal that stays constant across one ingredient search. */
@@ -462,6 +466,8 @@ function resolveIndicators(locale?: Locale): MatchIndicators {
     raw: locale?.rawIndicators ?? RAW_INDICATORS,
     bundlePatterns: locale?.bundlePatterns ?? [" eller ", " el. "],
     modifierPrepositions: locale?.modifierPrepositions ?? MODIFIER_PREPOSITIONS,
+    minced: locale?.mincedIndicators ?? ["hakket", "fars"],
+    wholeCut: locale?.wholeCutIndicators ?? ["bryst", "filet", "lår", "mørbrad", "kotelet"],
   };
 }
 
@@ -500,6 +506,15 @@ function scoreMeatOrFrozen(
   return delta;
 }
 
+// "hakket" counts as a raw indicator, so minced chicken scored as fresh meat
+// for a recipe asking for breast. Penalise only an ingredient that names a
+// whole cut: a generic "Oksekød" often means minced and may still match.
+function scoreMeatForm(heading: string, ingredientName: string, ind: MatchIndicators): number {
+  const wantsCut = ind.wholeCut.some((c) => ingredientName.includes(c));
+  const offerMinced = ind.minced.some((m) => heading.includes(m));
+  return wantsCut && offerMinced ? SCORE.FORM_MISMATCH_PENALTY : 0;
+}
+
 function scoreTextMatch(heading: string, term: string, modifierPrepositions: string[]): number {
   if (heading.startsWith(term) || heading === term) return SCORE.EXACT_MATCH_BONUS;
   if (!heading.includes(term)) return SCORE.NO_MATCH_PENALTY;
@@ -534,6 +549,7 @@ export function scoreDealMatchCtx(
 
   if (ingredient.category === "meat" || ingredient.category === "frozen") {
     score += scoreMeatOrFrozen(heading, isBundleHeading, ind);
+    score += scoreMeatForm(heading, ingredient.name.toLowerCase(), ind);
   }
 
   // Penalize ambiguous "X eller Y" / "X el. Y" bundles for all categories

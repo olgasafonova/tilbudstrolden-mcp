@@ -132,6 +132,48 @@ describe("generate_shopping_list", () => {
     expect(text).toContain("Shopping list for: Bolognese");
   });
 
+  it("buys one pack when two recipes name the same product differently", async () => {
+    const chicken = makeOffer({
+      id: "chicken",
+      heading: "Kyllingebrystfilet",
+      price: 27.95,
+      quantity: 280,
+      unit: "g",
+      pricePerUnit: "99.82 kr/kg",
+    });
+    const recipe = (name: string, ingredient: string) =>
+      beefRecipe({
+        name,
+        servings: 2,
+        ingredients: [
+          {
+            name: ingredient,
+            quantity: "100g",
+            searchTerms: ["kyllingebryst", "kyllingefilet"],
+            category: "meat",
+          },
+        ],
+      });
+    vi.mocked(store.getRecipes).mockResolvedValue([
+      recipe("Wok", "Kyllingebryst"),
+      recipe("Suppe", "Kyllingefilet"),
+    ]);
+    vi.mocked(api.searchDealsBatch).mockResolvedValue(
+      new Map([
+        ["kyllingebryst", [chicken]],
+        ["kyllingefilet", [chicken]],
+      ]),
+    );
+
+    const text = textOf(
+      await callTool(stub, "generate_shopping_list", { recipes: ["Wok", "Suppe"] }),
+    );
+    // One line, both needs added up (100 g + 100 g), one pack paid for.
+    expect(text).toContain("Kyllingebryst + Kyllingefilet: need 100 g + 100 g = 200 g");
+    expect(text.match(/Kyllingebrystfilet @ Netto/g)).toHaveLength(1);
+    expect(text).toContain("## Netto (1 items)");
+  });
+
   it("groups matched items under their store with pack maths and leftovers", async () => {
     vi.mocked(store.getRecipes).mockResolvedValue([beefRecipe()]);
     vi.mocked(api.searchDealsBatch).mockResolvedValue(beefDeals());

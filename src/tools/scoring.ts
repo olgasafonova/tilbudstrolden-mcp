@@ -14,7 +14,7 @@ import {
   type ScoredRecipe,
 } from "../scoring.js";
 import * as store from "../store.js";
-import { errorResult } from "./shared.js";
+import { errorResult, resolveStoreScope } from "./shared.js";
 
 /** Everything a recipe needs to be scored against the current deal map */
 interface ScoringContext {
@@ -293,16 +293,15 @@ async function handleScoreRecipes(args: ScoreRecipesArgs) {
     const locale = getLocale(household.country);
     const pantry = await store.getPantry();
     const pantrySet = new Set(pantry.map((p) => p.toLowerCase()));
-    const preferredStores = new Set(household.stores.map((s) => s.name));
+    const scope = resolveStoreScope(household, locale);
 
     const householdSize = household.people.length || household.defaultServings;
-    const dealerIds = household.stores.map((s) => s.dealerId);
     const { scored } = await scoreAllRecipes(
-      preferredStores,
+      scope.names,
       pantrySet,
       householdSize,
       locale,
-      dealerIds,
+      scope.dealerIds,
     );
 
     const parts = [
