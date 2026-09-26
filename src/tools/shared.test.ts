@@ -7,6 +7,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Offer } from "../api.js";
+import type { Household } from "../store.js";
 
 vi.mock("../store.js", () => ({
   getHousehold: vi.fn(),
@@ -21,6 +22,7 @@ const {
   formatOfferList,
   getActiveLocale,
   getKnownStores,
+  resolveStoreScope,
 } = await import("./shared.js");
 const { getLocale } = await import("../locales.js");
 
@@ -173,5 +175,35 @@ describe("getActiveLocale", () => {
     const locale = await getActiveLocale();
     expect(locale.country).toBe(wantCountry);
     expect(locale.currency).toBe(wantCurrency);
+  });
+});
+
+describe("resolveStoreScope", () => {
+  const dk = getLocale("DK");
+  const household = (stores: Household["stores"]): Household => ({
+    people: [],
+    stores,
+    defaultServings: 2,
+    country: "DK",
+  });
+
+  it("uses the household's own stores when set", () => {
+    const scope = resolveStoreScope(
+      household([{ name: "Netto", dealerId: "9ba51", priority: 1 }]),
+      dk,
+    );
+    expect([...scope.names]).toEqual(["Netto"]);
+    expect(scope.dealerIds).toEqual(["9ba51"]);
+    expect(scope.usingDefaults).toBe(false);
+  });
+
+  it("falls back to the country's known chains, not every dealer", () => {
+    const scope = resolveStoreScope(household([]), dk);
+    expect(scope.usingDefaults).toBe(true);
+    expect(scope.names.has("netto")).toBe(true);
+    expect(scope.names.has("rema 1000")).toBe(true);
+    // Aliases share an ID; the search should list each dealer once.
+    expect(scope.dealerIds.filter((id) => id === "11deC")).toHaveLength(1);
+    expect(scope.dealerIds).toHaveLength(new Set(Object.values(dk.knownStores)).size);
   });
 });

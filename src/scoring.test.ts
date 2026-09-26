@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Offer } from "./api.js";
 import {
+  aggregateQuantities,
   buildMatchContext,
   calculateBasketCost,
   computeIngredientCost,
@@ -9,6 +10,7 @@ import {
   findOptimalWeek,
   isModifierPosition,
   parseQuantity,
+  roundShare,
   SCORE,
   type ScoredRecipe,
   scoreDealMatchCtx,
@@ -908,5 +910,104 @@ describe("findOptimalWeek", () => {
         expect(i + 1).toBe(3); // slow only on day 3
       }
     }
+  });
+});
+
+// --- aggregateQuantities / roundShare (bead 86e) ---
+
+describe("aggregateQuantities rounding", () => {
+  it("rounds countable totals up so you can buy them", () => {
+    // Two recipes for 4, household of 2: 1 + 0.5 lemon = 1.5, so buy 2.
+    const result = aggregateQuantities(
+      [
+        { quantity: "2 stk", recipeServings: 4 },
+        { quantity: "1 stk", recipeServings: 4 },
+      ],
+      2,
+    );
+    expect(result).toEqual({ totalAmount: 2, unit: "stk" });
+  });
+
+  it("does not add an item for float noise", () => {
+    const result = aggregateQuantities(
+      [
+        { quantity: "0.1 stk", recipeServings: 1 },
+        { quantity: "0.1 stk", recipeServings: 1 },
+        { quantity: "0.1 stk", recipeServings: 1 },
+      ],
+      10,
+    );
+    // 0.1 * 10 * 3 is 3.0000000000000004 in floating point; still 3 onions.
+    expect(result).toEqual({ totalAmount: 3, unit: "stk" });
+  });
+
+  it("keeps rounding weights to the nearest gram", () => {
+    const result = aggregateQuantities([{ quantity: "250 g", recipeServings: 4 }], 3);
+    expect(result).toEqual({ totalAmount: 188, unit: "g" });
+  });
+});
+
+describe("roundShare", () => {
+  it("keeps fractional countable shares so parts add up to the total", () => {
+    expect(roundShare(0.75, "stk")).toBe(0.75);
+    expect(roundShare(1 / 3, "stk")).toBe(0.33);
+  });
+
+  it("rounds weights and volumes to whole units", () => {
+    expect(roundShare(187.5, "g")).toBe(188);
+    expect(roundShare(12.4, "ml")).toBe(12);
+  });
+});
+
+// --- minced vs whole cut (bead 86e) ---
+
+describe("findBestDeal meat form", () => {
+  const offer = (id: string, heading: string): Offer => ({
+    id,
+    heading,
+    description: null,
+    price: 30,
+    prePrice: null,
+    currency: "DKK",
+    quantity: 400,
+    unit: "g",
+    pricePerUnit: null,
+    store: "Lidl",
+    storeId: "71c90",
+    validFrom: null,
+    validUntil: null,
+    imageUrl: null,
+  });
+
+  it("does not sell minced chicken as chicken breast", () => {
+    const deals = new Map([["kylling", [offer("m", "Hakket kylling 7-10%")]]]);
+    const result = findBestDeal(
+      { name: "Kyllingebryst", searchTerms: ["kylling"], category: "meat" },
+      deals,
+      new Set(),
+    );
+    expect(result.best).toBeNull();
+  });
+
+  it("prefers the fillet when both are on offer", () => {
+    const deals = new Map([
+      ["kylling", [offer("m", "Hakket kylling 7-10%"), offer("f", "Kyllingebrystfilet")]],
+    ]);
+    const result = findBestDeal(
+      { name: "Kyllingebryst", searchTerms: ["kylling"], category: "meat" },
+      deals,
+      new Set(),
+    );
+    expect(result.best?.id).toBe("f");
+  });
+
+  it("still matches minced beef to a minced-beef recipe", () => {
+    const deals = new Map([["hakket oksekød", [offer("b", "Hakket oksekød 8-12%")]]]);
+    const result = findBestDeal(
+      { name: "Hakket oksekød", searchTerms: ["hakket oksekød"], category: "meat" },
+      deals,
+      new Set(),
+    );
+    expect(result.best?.id).toBe("b");
   });
 });

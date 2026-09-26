@@ -15,6 +15,44 @@ export function getKnownStores(locale: Locale): Record<string, string> {
   return locale.knownStores;
 }
 
+/** Which stores a deal search should cover, and whether they came from the household. */
+export interface StoreScope {
+  /** Store names for scoring; matched case-insensitively against offer.store */
+  names: Set<string>;
+  /** Dealer IDs to restrict the API search to */
+  dealerIds: string[];
+  /** True when the household has no stores and the locale's known chains stand in */
+  usingDefaults: boolean;
+}
+
+/**
+ * Resolve the stores to plan against. With none configured, fall back to the
+ * locale's known national chains rather than every dealer in the country: an
+ * unrestricted search optimises across ~300 DK dealers and returns 13-store
+ * trips through catering wholesalers and border shops.
+ */
+export function resolveStoreScope(household: store.Household, locale: Locale): StoreScope {
+  if (household.stores.length > 0) {
+    return {
+      names: new Set(household.stores.map((s) => s.name)),
+      dealerIds: household.stores.map((s) => s.dealerId),
+      usingDefaults: false,
+    };
+  }
+  const known = getKnownStores(locale);
+  return {
+    // Every alias is kept as a name so "rema 1000" and "rema" both match offers.
+    names: new Set(Object.keys(known)),
+    dealerIds: [...new Set(Object.values(known))],
+    usingDefaults: true,
+  };
+}
+
+/** One-line note for plan output when the known-chain fallback was used. */
+export function defaultStoresNote(locale: Locale): string {
+  return `Planned across the main supermarket chains in ${locale.countryName} because no stores are set. Set your own with update_household (list_stores shows dealer IDs).`;
+}
+
 /** Get the active locale from household config */
 export async function getActiveLocale(): Promise<Locale> {
   const household = await store.getHousehold();

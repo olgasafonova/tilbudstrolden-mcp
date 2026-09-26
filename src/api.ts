@@ -24,11 +24,18 @@ export interface CountryScope {
 export interface DealSearch extends CountryScope {
   query: string;
   limit?: number;
+  /**
+   * Restrict the search to these dealers. Without it the API ranks offers from
+   * every store in the country, so a small limit can leave a household's own
+   * stores with no results at all once the caller filters to them.
+   */
+  dealerIds?: string[];
 }
 
 export interface BatchDealSearch extends CountryScope {
   queries: string[];
   limit?: number;
+  dealerIds?: string[];
 }
 
 export interface StoreOffersQuery {
@@ -66,6 +73,7 @@ export async function searchDeals(search: DealSearch): Promise<Offer[]> {
     limit: String(limit * 3),
     country_id: country,
   });
+  if (search.dealerIds?.length) params.set("dealer_ids", search.dealerIds.join(","));
   const raw = await fetchJson<RawOffer[]>(`${BASE_URL}/offers/search?${params}`);
 
   if (country === "DK") {
@@ -108,6 +116,7 @@ export async function searchDealsBatch(search: BatchDealSearch): Promise<Map<str
       query: q,
       limit: search.limit ?? 5,
       country: search.country,
+      dealerIds: search.dealerIds,
     });
     return [q, offers] as const;
   });
@@ -116,12 +125,13 @@ export async function searchDealsBatch(search: BatchDealSearch): Promise<Map<str
   return new Map(results);
 }
 
+/** Page size the /dealers endpoint allows per request. */
+const DEALER_PAGE_SIZE = 100;
+/** Hard stop so a misbehaving API cannot page forever (DK had 303 dealers on 26-09-2026). */
+const MAX_DEALER_PAGES = 20;
+
 export async function listStores(scope: CountryScope = {}): Promise<Dealer[]> {
   const country = scope.country ?? "DK";
-  const params = new URLSearchParams({
-    country_id: country,
-    limit: "100",
-  });
 
   interface RawDealer {
     id: string;
@@ -131,8 +141,22 @@ export async function listStores(scope: CountryScope = {}): Promise<Dealer[]> {
     country: { id: string };
   }
 
-  const raw = await fetchJson<RawDealer[]>(`${BASE_URL}/dealers?${params}`);
-  return raw.map((d) => ({
+  // Read every page. The first page alone is a fraction of the country: in DK
+  // it left out Netto, Lidl and REMA 1000, so getDealerIds' allow-list silently
+  // dropped every offer from the three biggest discount chains.
+  const byId = new Map<string, RawDealer>();
+  for (let page = 0; page < MAX_DEALER_PAGES; page++) {
+    const params = new URLSearchParams({
+      country_id: country,
+      limit: String(DEALER_PAGE_SIZE),
+      offset: String(page * DEALER_PAGE_SIZE),
+    });
+    const raw = await fetchJson<RawDealer[]>(`${BASE_URL}/dealers?${params}`);
+    for (const d of raw) byId.set(d.id, d);
+    if (raw.length < DEALER_PAGE_SIZE) break;
+  }
+
+  return [...byId.values()].map((d) => ({
     id: d.id,
     name: d.name,
     website: d.website,

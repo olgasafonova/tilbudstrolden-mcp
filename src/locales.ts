@@ -25,6 +25,17 @@ export interface Locale {
   knownStores: Record<string, string>;
   /** Bundle/or-separator patterns in headings */
   bundlePatterns: string[];
+  /**
+   * Words marking minced meat in an offer heading. Whole compounds, not stems:
+   * Swedish "färs" is inside "färsk" (fresh).
+   */
+  mincedIndicators: string[];
+  /**
+   * Words marking a whole cut in an ingredient name. An ingredient naming one
+   * must not match a minced offer ("Kyllingebryst" was matched to "Hakket
+   * Kylling"); a generic "Oksekød" still may, since recipes often mean minced.
+   */
+  wholeCutIndicators: string[];
 }
 
 // ============================================================
@@ -178,6 +189,9 @@ const dk: Locale = {
     nuts: ["cashewnødder", "mandler", "peanuts", "nødder", "hasselnødder"],
     egg: ["æg"],
   },
+
+  mincedIndicators: ["hakket", "fars"],
+  wholeCutIndicators: ["bryst", "filet", "lår", "mørbrad", "kotelet"],
 
   knownStores: {
     netto: "9ba51",
@@ -338,6 +352,9 @@ const no: Locale = {
     egg: ["egg"],
   },
 
+  mincedIndicators: ["kjøttdeig", "kyllingdeig", "karbonadedeig"],
+  wholeCutIndicators: ["bryst", "filet", "lår"],
+
   knownStores: {
     rema: "faa0Ym",
     "rema 1000": "faa0Ym",
@@ -489,6 +506,9 @@ const se: Locale = {
     nuts: ["cashewnötter", "mandlar", "jordnötter", "nötter", "hasselnötter"],
     egg: ["ägg"],
   },
+
+  mincedIndicators: ["köttfärs", "kycklingfärs", "blandfärs", "nötfärs", "fläskfärs"],
+  wholeCutIndicators: ["bröst", "filé", "lår"],
 
   knownStores: {
     ica: "1d1dvA",
@@ -646,6 +666,9 @@ const fi: Locale = {
     nuts: ["cashewpähkinät", "mantelit", "maapähkinät", "pähkinät", "hasselpähkinät"],
     egg: ["kananmuna", "muna"],
   },
+
+  mincedIndicators: ["jauheliha"],
+  wholeCutIndicators: ["rinta", "file", "koipi"],
 
   knownStores: {
     "s-market": "d8ccs8",

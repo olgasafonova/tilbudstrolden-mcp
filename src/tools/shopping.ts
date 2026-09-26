@@ -4,7 +4,7 @@ import { getLocale } from "../locales.js";
 import { calculateBasketCost, findOptimalWeek } from "../scoring.js";
 import * as store from "../store.js";
 import { scoreAllRecipes } from "./scoring.js";
-import { errorResult } from "./shared.js";
+import { defaultStoresNote, errorResult, resolveStoreScope } from "./shared.js";
 import { buildShoppingList } from "./shopping-list.js";
 
 interface ShoppingListArgs {
@@ -68,16 +68,16 @@ function formatMealPlan(
   const parts: string[] = [`# ${days}-day meal plan (${householdSize} people)\n`];
 
   const basket = calculateBasketCost(bestPlan.recipes);
-  parts.push(`Estimated basket: ~${basket.totalCost} ${currency}`);
+  parts.push(`Estimated basket: ~${Math.round(basket.totalCost)} ${currency}`);
   if (basket.sharedSavings > 0) {
-    parts.push(`Shared ingredient savings: ~${basket.sharedSavings} ${currency}`);
+    parts.push(`Shared ingredient savings: ~${Math.round(basket.sharedSavings)} ${currency}`);
   }
   parts.push("");
 
   for (let i = 0; i < bestPlan.recipes.length; i++) {
     const r = bestPlan.recipes[i];
     parts.push(
-      `Day ${i + 1}: ${r.name} (~${r.estimatedCost} ${currency}) [${r.proteinType}, ${r.cuisineType}, ${r.complexity}]`,
+      `Day ${i + 1}: ${r.name} (~${Math.round(r.estimatedCost)} ${currency}) [${r.proteinType}, ${r.cuisineType}, ${r.complexity}]`,
     );
   }
 
@@ -91,14 +91,15 @@ async function handlePlanAndShop(args: PlanArgs) {
     const locale = getLocale(household.country);
     const pantry = await store.getPantry();
     const pantrySet = new Set(pantry.map((p) => p.toLowerCase()));
-    const preferredStores = new Set(household.stores.map((s) => s.name));
+    const scope = resolveStoreScope(household, locale);
     const householdSize = people ?? (household.people.length || household.defaultServings);
 
     const { scored, dealMap: cachedDeals } = await scoreAllRecipes(
-      preferredStores,
+      scope.names,
       pantrySet,
       householdSize,
       locale,
+      scope.dealerIds,
     );
 
     if (scored.length < days) {
@@ -124,6 +125,7 @@ async function handlePlanAndShop(args: PlanArgs) {
     }
 
     const parts = formatMealPlan(bestPlan, days, householdSize, locale.currency);
+    if (scope.usingDefaults) parts.splice(1, 0, `${defaultStoresNote(locale)}\n`);
 
     // Generate shopping list for the planned recipes
     const allRecipes = await store.getRecipes();

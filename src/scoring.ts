@@ -204,7 +204,29 @@ export function aggregateQuantities(
   }
 
   if (baseUnit === null || totalAmount <= 0) return null;
-  return { totalAmount: Math.round(totalAmount), unit: baseUnit };
+  return { totalAmount: roundTotal(totalAmount, baseUnit), unit: baseUnit };
+}
+
+// Float noise from scaling (0.1 * 3 = 0.30000000000000004) must not push a
+// countable total up a whole item.
+const CEIL_EPSILON = 1e-9;
+
+/**
+ * Round an aggregated total to something you can buy. Countable items round up:
+ * four recipes each needing 0.75 onion need 3 onions, and 1.25 lemons means
+ * buying 2. Weights and volumes round to the nearest whole unit.
+ */
+function roundTotal(amount: number, unit: string): number {
+  return unit === "stk" ? Math.ceil(amount - CEIL_EPSILON) : Math.round(amount);
+}
+
+/**
+ * Round one recipe's scaled share for display. Countable items keep two
+ * decimals so the parts visibly add up to the total ("0.75 stk" four times is
+ * 3 stk); rounding each part to a whole item showed "1 + 1 + 1 + 1 = 3".
+ */
+export function roundShare(amount: number, unit: string): number {
+  return unit === "stk" ? Math.round(amount * 100) / 100 : Math.round(amount);
 }
 
 /**
@@ -352,6 +374,8 @@ export const SCORE = {
   MODIFIER_PENALTY: -40,
   /** Search term not found in heading at all */
   NO_MATCH_PENALTY: -50,
+  /** Minced offer for a whole cut (breast, fillet): drops below viability */
+  FORM_MISMATCH_PENALTY: -60,
   VIABILITY_THRESHOLD: 30,
   /** Above this = auto-accept; below = show candidates for Claude to validate */
   CONFIDENT_THRESHOLD: 55,
@@ -425,6 +449,8 @@ interface MatchIndicators {
   raw: string[];
   bundlePatterns: string[];
   modifierPrepositions: string[];
+  minced: string[];
+  wholeCut: string[];
 }
 
 /** Everything needed to score a deal that stays constant across one ingredient search. */
@@ -440,6 +466,8 @@ function resolveIndicators(locale?: Locale): MatchIndicators {
     raw: locale?.rawIndicators ?? RAW_INDICATORS,
     bundlePatterns: locale?.bundlePatterns ?? [" eller ", " el. "],
     modifierPrepositions: locale?.modifierPrepositions ?? MODIFIER_PREPOSITIONS,
+    minced: locale?.mincedIndicators ?? ["hakket", "fars"],
+    wholeCut: locale?.wholeCutIndicators ?? ["bryst", "filet", "lår", "mørbrad", "kotelet"],
   };
 }
 
@@ -478,6 +506,15 @@ function scoreMeatOrFrozen(
   return delta;
 }
 
+// "hakket" counts as a raw indicator, so minced chicken scored as fresh meat
+// for a recipe asking for breast. Penalise only an ingredient that names a
+// whole cut: a generic "Oksekød" often means minced and may still match.
+function scoreMeatForm(heading: string, ingredientName: string, ind: MatchIndicators): number {
+  const wantsCut = ind.wholeCut.some((c) => ingredientName.includes(c));
+  const offerMinced = ind.minced.some((m) => heading.includes(m));
+  return wantsCut && offerMinced ? SCORE.FORM_MISMATCH_PENALTY : 0;
+}
+
 function scoreTextMatch(heading: string, term: string, modifierPrepositions: string[]): number {
   if (heading.startsWith(term) || heading === term) return SCORE.EXACT_MATCH_BONUS;
   if (!heading.includes(term)) return SCORE.NO_MATCH_PENALTY;
@@ -512,6 +549,7 @@ export function scoreDealMatchCtx(
 
   if (ingredient.category === "meat" || ingredient.category === "frozen") {
     score += scoreMeatOrFrozen(heading, isBundleHeading, ind);
+    score += scoreMeatForm(heading, ingredient.name.toLowerCase(), ind);
   }
 
   // Penalize ambiguous "X eller Y" / "X el. Y" bundles for all categories
