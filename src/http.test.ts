@@ -178,9 +178,28 @@ describe("withConcurrencyLimit", () => {
     expect(peak()).toBe(3);
   });
 
-  // Only the cases where the failure is the first task to settle, or is still
-  // in flight when the final wait starts. A task that rejects in the same tick
-  // as an earlier success is currently dropped instead (reported, not fixed).
+  it("rejects when a task fails in the same tick as an earlier success", async () => {
+    const tasks = [
+      async () => 1,
+      async () => {
+        throw new Error("x");
+      },
+      async () => 3,
+    ];
+    await expect(withConcurrencyLimit(tasks, 2)).rejects.toThrow("x");
+  });
+
+  it("stops starting new tasks after a failure", async () => {
+    const started: number[] = [];
+    const tasks = [0, 1, 2, 3].map((i) => async () => {
+      started.push(i);
+      if (i === 0) throw new Error("first failed");
+      return i;
+    });
+    await expect(withConcurrencyLimit(tasks, 1)).rejects.toThrow("first failed");
+    expect(started).toEqual([0]);
+  });
+
   it("rejects when the first task to settle rejects", async () => {
     const tasks = [
       async () => {

@@ -57,27 +57,31 @@ export async function fetchJson<T>(url: string): Promise<T> {
   throw lastError ?? new Error("API request failed after retries");
 }
 
-// Simple concurrency limiter for batch operations
+/**
+ * Run tasks with at most `limit` in flight, returning results in task order.
+ * Rejects with the first task error; no new tasks start after a failure.
+ */
 export async function withConcurrencyLimit<T>(
   tasks: (() => Promise<T>)[],
   limit: number,
 ): Promise<T[]> {
-  const results: (T | undefined)[] = new Array(tasks.length);
-  const executing: Set<Promise<void>> = new Set();
+  const results: T[] = new Array(tasks.length);
+  let next = 0;
+  let failed = false;
 
-  for (let i = 0; i < tasks.length; i++) {
-    const idx = i;
-    const p = tasks[idx]().then((result) => {
-      results[idx] = result;
-    });
-    const tracked = p.finally(() => executing.delete(tracked));
-    executing.add(tracked);
-
-    if (executing.size >= limit) {
-      await Promise.race(executing);
+  const worker = async () => {
+    while (!failed && next < tasks.length) {
+      const idx = next++;
+      try {
+        results[idx] = await tasks[idx]();
+      } catch (err) {
+        failed = true;
+        throw err;
+      }
     }
-  }
+  };
 
-  await Promise.all(executing);
-  return results as T[];
+  const workerCount = Math.min(Math.max(1, limit), tasks.length);
+  await Promise.all(Array.from({ length: workerCount }, worker));
+  return results;
 }
