@@ -101,9 +101,12 @@ describe("fetchJson", () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
-  it("surfaces a client error status in the thrown message", async () => {
-    stubFetch({ status: 404 });
+  it("fails a client error immediately without retrying", async () => {
+    const fetchMock = stubFetch({ status: 404 });
+    const start = Date.now();
     await expect(settle(fetchJson(URL_))).rejects.toThrow("API request failed (404)");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(Date.now() - start).toBe(0); // no backoff sleep
   });
 
   it("retries a network failure and rethrows it when every attempt fails", async () => {

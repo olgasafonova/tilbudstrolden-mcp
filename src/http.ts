@@ -16,6 +16,9 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 /** Exponential backoff: 500ms, 1s, 2s... */
 const backoffDelay = (attempt: number) => RETRY_BASE_MS * 2 ** attempt;
 
+/** A failure that retrying cannot fix, such as a 4xx client error. */
+class NonRetryableError extends Error {}
+
 type FetchAttempt<T> = { retryable: false; body: T } | { retryable: true; error: Error };
 
 /**
@@ -32,9 +35,15 @@ async function attemptFetch<T>(url: string): Promise<FetchAttempt<T>> {
     return { retryable: true, error: new Error(`API returned ${res.status}`) };
   }
   if (!res.ok) {
-    throw new Error(`API request failed (${res.status})`);
+    throw new NonRetryableError(`API request failed (${res.status})`);
   }
   return { retryable: false, body: (await res.json()) as T };
+}
+
+/** Normalise a thrown value for a retry, rethrowing failures a retry cannot fix. */
+function retryableError(err: unknown): Error {
+  if (err instanceof NonRetryableError) throw err;
+  return err instanceof Error ? err : new Error(String(err));
 }
 
 export async function fetchJson<T>(url: string): Promise<T> {
@@ -47,7 +56,7 @@ export async function fetchJson<T>(url: string): Promise<T> {
       lastError = result.error;
       await sleep(backoffDelay(attempt));
     } catch (err) {
-      lastError = err instanceof Error ? err : new Error(String(err));
+      lastError = retryableError(err);
       if (attempt < MAX_RETRIES - 1) {
         await sleep(backoffDelay(attempt));
       }
