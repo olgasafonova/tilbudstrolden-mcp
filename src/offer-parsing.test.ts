@@ -124,6 +124,9 @@ describe("parseOffer unit price", () => {
   it.each<[string, number, RawQuantity, string]>([
     ["converts a gram pack to a per-kg price", 45, grams(400), "112.50 kr/kg"],
     ["converts a millilitre pack to a per-litre price", 15, grams(750, "ml"), "20.00 kr/L"],
+    ["converts an exactly 1000 g pack to a per-kg price", 50, grams(1000), "50.00 kr/kg"],
+    ["converts a pack over 1000 g to a per-kg price", 60, grams(1500), "40.00 kr/kg"],
+    ["converts an exactly 1000 ml pack to a per-litre price", 20, grams(1000, "ml"), "20.00 kr/L"],
     [
       "prices per the reported unit when it is a base retail unit",
       45,

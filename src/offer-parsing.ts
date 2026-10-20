@@ -68,7 +68,7 @@ const KILO_UNIT_CONVERSIONS: Record<string, { factor: number; suffix: string }> 
 
 function unitPricePerUnit(price: number, qty: number, unitSymbol: string, sym: string): string {
   const conv = KILO_UNIT_CONVERSIONS[unitSymbol];
-  if (conv && qty < conv.factor) {
+  if (conv) {
     return `${((price / qty) * conv.factor).toFixed(2)} ${sym}/${conv.suffix}`;
   }
   return `${(price / qty).toFixed(2)} ${sym}/${unitSymbol}`;
