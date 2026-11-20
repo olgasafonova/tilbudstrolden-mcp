@@ -45,6 +45,32 @@ const WRITER_TOOLS = [
   "log_spend",
 ] as const;
 
+/** Tools that only touch the local store file (~/.tilbudstrolden.json). */
+const LOCAL_STORE_TOOLS = [
+  "get_recipes",
+  "add_recipe",
+  "remove_recipe",
+  "get_household",
+  "update_household",
+  "update_pantry",
+  "get_pantry",
+  "log_meal",
+  "get_meal_history",
+  "log_spend",
+  "get_spend_log",
+] as const;
+
+/** Tools that call the eTilbudsavis API: their output is third-party content. */
+const OPEN_WORLD_TOOLS = [
+  "search_deals",
+  "get_store_offers",
+  "list_stores",
+  "deals_this_week",
+  "score_recipes",
+  "generate_shopping_list",
+  "plan_and_shop",
+] as const;
+
 let stub: ServerStub;
 
 beforeEach(() => {
@@ -132,5 +158,35 @@ describe("tool annotations", () => {
       destructiveHint: false,
       idempotentHint: false,
     });
+  });
+
+  it("splits every tool into exactly one of the local-store and open-world lists", () => {
+    const listed = [...LOCAL_STORE_TOOLS, ...OPEN_WORLD_TOOLS].sort();
+    expect([...stub.tools.keys()].sort()).toEqual(listed);
+  });
+
+  it("marks the local-store tools closed-world (openWorldHint: false)", () => {
+    for (const name of LOCAL_STORE_TOOLS) {
+      expect(annotationsOf(name)?.openWorldHint, `${name} should be openWorldHint: false`).toBe(
+        false,
+      );
+    }
+  });
+
+  it("marks the eTilbudsavis tools open-world explicitly (openWorldHint: true)", () => {
+    for (const name of OPEN_WORLD_TOOLS) {
+      expect(annotationsOf(name)?.openWorldHint, `${name} should be openWorldHint: true`).toBe(
+        true,
+      );
+    }
+  });
+
+  it("gives every tool a non-empty human-readable title", () => {
+    for (const name of stub.tools.keys()) {
+      const title = annotationsOf(name)?.title;
+      expect(typeof title === "string" && title.trim().length > 0, `${name} has no title`).toBe(
+        true,
+      );
+    }
   });
 });

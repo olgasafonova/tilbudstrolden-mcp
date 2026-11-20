@@ -93,7 +93,7 @@ export function registerTrackingTools(server: McpServer): void {
       },
       // Upsert keyed by date + recipe: replaying the same args changes nothing.
       // Can overwrite an existing same-key entry, so destructiveHint stays at its default.
-      annotations: { idempotentHint: true },
+      annotations: { title: "Log Meal", idempotentHint: true, openWorldHint: false },
     },
     handleLogMeal,
   );
@@ -106,7 +106,7 @@ export function registerTrackingTools(server: McpServer): void {
       inputSchema: {
         weeks: z.number().optional().default(4).describe("Weeks back (default 4)"),
       },
-      annotations: { readOnlyHint: true },
+      annotations: { title: "Get Meal History", readOnlyHint: true, openWorldHint: false },
     },
     handleGetMealHistory,
   );
@@ -124,7 +124,12 @@ export function registerTrackingTools(server: McpServer): void {
         notes: z.string().optional().default(""),
       },
       // Pure append: never deletes or overwrites, but a replayed call adds a duplicate row.
-      annotations: { destructiveHint: false, idempotentHint: false },
+      annotations: {
+        title: "Log Spend",
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false,
+      },
     },
     handleLogSpend,
   );
@@ -137,7 +142,7 @@ export function registerTrackingTools(server: McpServer): void {
       inputSchema: {
         weeks: z.number().optional().default(8).describe("Weeks back (default 8)"),
       },
-      annotations: { readOnlyHint: true },
+      annotations: { title: "Get Spend Log", readOnlyHint: true, openWorldHint: false },
     },
     handleGetSpendLog,
   );

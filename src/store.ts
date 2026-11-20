@@ -257,6 +257,9 @@ export async function getRecipes(): Promise<Recipe[]> {
   if (data.recipes.length === 0 && data.household.country === "DK") {
     // Seed default recipes on first use for DK households only.
     // Default recipes use Danish search terms and won't match NO/SE/FI offers.
+    // This one-time seed write is why get_recipes keeps readOnlyHint: true.
+    // It only materialises defaults the user would otherwise see anyway, runs at
+    // most once per store, and never changes or removes existing data.
     const seeded = await modify((s) => {
       if (s.recipes.length === 0 && s.household.country === "DK") {
         s.recipes = [...defaultRecipes];

@@ -98,7 +98,7 @@ export function registerRecipeTools(server: McpServer): void {
       description:
         "List saved recipes with ingredients, metadata, and search terms. USE WHEN: reviewing recipe library, checking what's available for meal planning. Returns onboarding guidance if no recipes exist yet.",
       inputSchema: {},
-      annotations: { readOnlyHint: true },
+      annotations: { title: "Get Recipes", readOnlyHint: true, openWorldHint: false },
     },
     handleGetRecipes,
   );
@@ -137,7 +137,7 @@ export function registerRecipeTools(server: McpServer): void {
       },
       // Upsert: same args replayed produce the same stored recipe. Can overwrite an
       // existing recipe with the same name, so destructiveHint is left at its default.
-      annotations: { idempotentHint: true },
+      annotations: { title: "Add Recipe", idempotentHint: true, openWorldHint: false },
     },
     handleAddRecipe,
   );
@@ -151,7 +151,12 @@ export function registerRecipeTools(server: McpServer): void {
         name: z.string().describe("Recipe name"),
       },
       // Deletes data; removing an already-removed recipe is a no-op.
-      annotations: { destructiveHint: true, idempotentHint: true },
+      annotations: {
+        title: "Remove Recipe",
+        destructiveHint: true,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
     },
     handleRemoveRecipe,
   );
