@@ -375,7 +375,7 @@ export function registerScoringTools(server: McpServer): void {
             'Soft cuisine preferences: {"asian": 3} = prefer at least 3 Asian dishes. Best-effort, won\'t fail if impossible.',
           ),
       },
-      annotations: { readOnlyHint: true },
+      annotations: { title: "Score Recipes", readOnlyHint: true, openWorldHint: true },
     },
     handleScoreRecipes,
   );

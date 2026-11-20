@@ -115,7 +115,7 @@ export function registerHouseholdTools(server: McpServer): void {
       description:
         "Get household config: people, dietary restrictions, preferred stores, servings. USE WHEN: checking current setup before meal planning, verifying store preferences. Returns onboarding guidance if not yet configured.",
       inputSchema: {},
-      annotations: { readOnlyHint: true },
+      annotations: { title: "Get Household", readOnlyHint: true, openWorldHint: false },
     },
     handleGetHousehold,
   );
@@ -157,7 +157,7 @@ export function registerHouseholdTools(server: McpServer): void {
       },
       // Patch semantics: the same args replayed produce the same config. Provided fields
       // replace their previous values wholesale, so destructiveHint stays at its default.
-      annotations: { idempotentHint: true },
+      annotations: { title: "Update Household", idempotentHint: true, openWorldHint: false },
     },
     handleUpdateHousehold,
   );
@@ -173,7 +173,7 @@ export function registerHouseholdTools(server: McpServer): void {
       },
       // Set semantics: replaying the same add/remove lists changes nothing.
       // remove deletes entries, so destructiveHint stays at its default.
-      annotations: { idempotentHint: true },
+      annotations: { title: "Update Pantry", idempotentHint: true, openWorldHint: false },
     },
     handleUpdatePantry,
   );
@@ -184,7 +184,7 @@ export function registerHouseholdTools(server: McpServer): void {
       description:
         "List pantry items (excluded from shopping lists). USE WHEN: checking what's already stocked before generating a shopping list. Returns list of pantry item names.",
       inputSchema: {},
-      annotations: { readOnlyHint: true },
+      annotations: { title: "Get Pantry", readOnlyHint: true, openWorldHint: false },
     },
     handleGetPantry,
   );

@@ -162,7 +162,7 @@ export function registerShoppingTools(server: McpServer): void {
           .default(true)
           .describe("Skip pantry items (default true)"),
       },
-      annotations: { readOnlyHint: true },
+      annotations: { title: "Generate Shopping List", readOnlyHint: true, openWorldHint: true },
     },
     handleGenerateShoppingList,
   );
@@ -199,7 +199,7 @@ export function registerShoppingTools(server: McpServer): void {
           .optional()
           .describe('Soft cuisine preferences: {"asian": 3} = prefer at least 3 Asian dishes'),
       },
-      annotations: { readOnlyHint: true },
+      annotations: { title: "Plan and Shop", readOnlyHint: true, openWorldHint: true },
     },
     handlePlanAndShop,
   );

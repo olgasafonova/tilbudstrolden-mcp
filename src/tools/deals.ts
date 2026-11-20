@@ -223,7 +223,7 @@ export function registerDealTools(server: McpServer): void {
           ),
         limit: z.number().optional().default(20).describe("Max results (default 20)"),
       },
-      annotations: { readOnlyHint: true },
+      annotations: { title: "Search Deals", readOnlyHint: true, openWorldHint: true },
     },
     handleSearchDeals,
   );
@@ -241,7 +241,7 @@ export function registerDealTools(server: McpServer): void {
           ),
         limit: z.number().optional().default(50).describe("Max results"),
       },
-      annotations: { readOnlyHint: true },
+      annotations: { title: "Get Store Offers", readOnlyHint: true, openWorldHint: true },
     },
     handleGetStoreOffers,
   );
@@ -255,7 +255,7 @@ export function registerDealTools(server: McpServer): void {
         query: z.string().optional().describe("Filter by name"),
         all: z.boolean().optional().default(false).describe("Include non-grocery stores too"),
       },
-      annotations: { readOnlyHint: true },
+      annotations: { title: "List Stores", readOnlyHint: true, openWorldHint: true },
     },
     handleListStores,
   );
@@ -268,7 +268,7 @@ export function registerDealTools(server: McpServer): void {
       inputSchema: {
         limit: z.number().optional().default(30).describe("Max deals per store (default 30)"),
       },
-      annotations: { readOnlyHint: true },
+      annotations: { title: "Deals This Week", readOnlyHint: true, openWorldHint: true },
     },
     handleDealsThisWeek,
   );
